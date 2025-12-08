@@ -70,6 +70,46 @@ setupController(1);
 // VR interaction state
 let vrDraggedDot = null;
 let vrDraggedController = null;
+let vrDraggedHand = null;
+const hands = [];
+const handModels = [];
+
+// Hand tracking setup
+function setupHand(index) {
+  const hand = renderer.xr.getHand(index);
+  hand.addEventListener('pinchstart', onHandPinchStart);
+  hand.addEventListener('pinchend', onHandPinchEnd);
+  scene.add(hand);
+  hands[index] = hand;
+  
+  // Add spheres for hand joints visualization
+  const handModel = {
+    joints: {},
+    spheres: {}
+  };
+  
+  const sphereGeometry = new THREE.SphereGeometry(0.008, 8, 8);
+  const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 });
+  
+  hand.addEventListener('connected', (event) => {
+    const xrInputSource = event.data;
+    if (xrInputSource.hand) {
+      const joints = ['wrist', 'thumb-tip', 'index-finger-tip', 'middle-finger-tip', 'ring-finger-tip', 'pinky-finger-tip'];
+      joints.forEach(jointName => {
+        const sphere = new THREE.Mesh(sphereGeometry.clone(), sphereMaterial.clone());
+        sphere.visible = false;
+        hand.add(sphere);
+        handModel.spheres[jointName] = sphere;
+      });
+    }
+  });
+  
+  handModels[index] = handModel;
+  return hand;
+}
+
+setupHand(0);
+setupHand(1);
 
 // --- BUILD TIMBRE CUBE ---
 const cubeGroup = new THREE.Group();
@@ -1226,10 +1266,77 @@ function onVRSelectEnd(event) {
   vrDraggedController = null;
 }
 
+function onHandPinchStart(event) {
+  const hand = event.target;
+  const indexTip = hand.joints['index-finger-tip'];
+  if (!indexTip) return;
+  
+  const raycaster = new THREE.Raycaster();
+  const tipPosition = new THREE.Vector3();
+  indexTip.getWorldPosition(tipPosition);
+  
+  const thumbTip = hand.joints['thumb-tip'];
+  const direction = new THREE.Vector3();
+  if (thumbTip) {
+    const thumbPosition = new THREE.Vector3();
+    thumbTip.getWorldPosition(thumbPosition);
+    direction.subVectors(tipPosition, thumbPosition).normalize();
+  } else {
+    direction.set(0, 0, -1);
+  }
+  
+  raycaster.set(tipPosition, direction);
+  
+  const dotMeshes = dots.map(d => d.mesh);
+  const intersects = raycaster.intersectObjects(dotMeshes);
+  
+  if (intersects.length > 0) {
+    const clickedMesh = intersects[0].object;
+    vrDraggedDot = dots.find(d => d.mesh === clickedMesh);
+    vrDraggedHand = hand;
+  } else {
+    const point = getIntersectionPointFromRay(raycaster);
+    if (point) {
+      if (Tone.context.state !== 'running') {
+        Tone.start();
+      }
+      addDotAtPoint(point);
+    }
+  }
+}
+
+function onHandPinchEnd(event) {
+  if (vrDraggedDot && vrDraggedHand === event.target) {
+    vrDraggedDot = null;
+    vrDraggedHand = null;
+  }
+}
+
+function getIntersectionPointFromRay(raycaster) {
+  const boxIntersects = raycaster.intersectObject(invisibleCube);
+  if (boxIntersects.length === 0) return null;
+  
+  const intersectPoint = boxIntersects[0].point;
+  const intersectLocal = intersectPoint.clone();
+  intersectLocal.sub(cubeGroup.position);
+  intersectLocal.applyQuaternion(cubeGroup.quaternion.clone().invert());
+  
+  const halfSize = cubeSize / 2;
+  intersectLocal.x = Math.max(-halfSize, Math.min(halfSize, intersectLocal.x));
+  intersectLocal.y = Math.max(-halfSize, Math.min(halfSize, intersectLocal.y));
+  intersectLocal.z = Math.max(-halfSize, Math.min(halfSize, intersectLocal.z));
+  
+  return intersectLocal;
+}
+
 function onVRSelect(event) {
   if (vrDraggedDot) return; // Was dragging, don't place new dot
   
   const controller = event.target;
+  
+  // Check for UI button clicks first
+  handleVRUIClick(controller);
+  
   const tempMatrix = new THREE.Matrix4();
   tempMatrix.identity().extractRotation(controller.matrixWorld);
   
@@ -1393,7 +1500,207 @@ function drawSpectrograph() {
 drawSpectrograph();
 
 // --- ANIMATION LOOP ---
+let vrUIPanel = null;
+let vrSpectrographPlane = null;
+let vrSpectrographTexture = null;
+
+function createVRUI() {
+  if (vrUIPanel) return; // Already created
+  
+  // Create 3D button panel
+  const panelGroup = new THREE.Group();
+  const buttonWidth = 0.3;
+  const buttonHeight = 0.1;
+  const buttonSpacing = 0.02;
+  
+  function createButton(text, color, index) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 85;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 32px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+    const geometry = new THREE.PlaneGeometry(buttonWidth, buttonHeight);
+    const button = new THREE.Mesh(geometry, material);
+    button.position.y = -index * (buttonHeight + buttonSpacing);
+    button.userData.buttonAction = text.toLowerCase();
+    return button;
+  }
+  
+  const downloadBtn = createButton('Download', '#4CAF50', 0);
+  const clearBtn = createButton('Clear', '#f44336', 1);
+  const resetBtn = createButton('Reset', '#2196F3', 2);
+  
+  panelGroup.add(downloadBtn);
+  panelGroup.add(clearBtn);
+  panelGroup.add(resetBtn);
+  panelGroup.position.set(-1.5, 1.5, -1);
+  panelGroup.lookAt(camera.position);
+  scene.add(panelGroup);
+  vrUIPanel = panelGroup;
+  
+  // Create floating spectrograph
+  vrSpectrographTexture = new THREE.CanvasTexture(spectroCanvas);
+  const spectroMaterial = new THREE.MeshBasicMaterial({ 
+    map: vrSpectrographTexture,
+    side: THREE.DoubleSide
+  });
+  const spectroGeometry = new THREE.PlaneGeometry(0.8, 0.5);
+  vrSpectrographPlane = new THREE.Mesh(spectroGeometry, spectroMaterial);
+  vrSpectrographPlane.position.set(1.5, 1.5, -1);
+  vrSpectrographPlane.lookAt(camera.position);
+  scene.add(vrSpectrographPlane);
+}
+
+function removeVRUI() {
+  if (vrUIPanel) {
+    scene.remove(vrUIPanel);
+    vrUIPanel.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (child.material.map) child.material.map.dispose();
+        child.material.dispose();
+      }
+    });
+    vrUIPanel = null;
+  }
+  if (vrSpectrographPlane) {
+    scene.remove(vrSpectrographPlane);
+    if (vrSpectrographPlane.geometry) vrSpectrographPlane.geometry.dispose();
+    if (vrSpectrographPlane.material) {
+      if (vrSpectrographPlane.material.map) vrSpectrographPlane.material.map.dispose();
+      vrSpectrographPlane.material.dispose();
+    }
+    vrSpectrographPlane = null;
+    vrSpectrographTexture = null;
+  }
+}
+
+function handleVRUIClick(controller) {
+  if (!vrUIPanel) return;
+  
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  
+  const raycaster = new THREE.Raycaster();
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+  
+  const buttons = vrUIPanel.children;
+  const intersects = raycaster.intersectObjects(buttons);
+  
+  if (intersects.length > 0) {
+    const button = intersects[0].object;
+    const action = button.userData.buttonAction;
+    
+    if (action === 'download') {
+      const link = document.createElement('a');
+      link.download = 'spectrograph.png';
+      link.href = spectroCanvas.toDataURL();
+      link.click();
+    } else if (action === 'clear') {
+      while (dots.length > 0) {
+        destroyDot(dots[0]);
+      }
+    } else if (action === 'reset') {
+      cubeGroup.rotation.x = 0;
+      cubeGroup.rotation.y = Math.PI / 12;
+      cubeGroup.rotation.z = 0;
+    }
+  }
+}
+
 function animate() {
+  // VR setup/teardown
+  if (renderer.xr.isPresenting && !vrUIPanel) {
+    createVRUI();
+  } else if (!renderer.xr.isPresenting && vrUIPanel) {
+    removeVRUI();
+  }
+  
+  // Update spectrograph texture in VR
+  if (vrSpectrographTexture && renderer.xr.isPresenting) {
+    vrSpectrographTexture.needsUpdate = true;
+  }
+  
+  // Update hand joint visualizations
+  hands.forEach((hand, index) => {
+    if (hand && hand.joints) {
+      const handModel = handModels[index];
+      if (handModel) {
+        Object.keys(hand.joints).forEach(jointName => {
+          const joint = hand.joints[jointName];
+          if (joint && handModel.spheres[jointName]) {
+            const sphere = handModel.spheres[jointName];
+            sphere.position.copy(joint.position);
+            sphere.quaternion.copy(joint.quaternion);
+            sphere.visible = renderer.xr.isPresenting;
+          }
+        });
+      }
+    }
+  });
+  
+  // Handle hand dragging
+  if (vrDraggedDot && vrDraggedHand) {
+    const indexTip = vrDraggedHand.joints['index-finger-tip'];
+    if (indexTip) {
+      const raycaster = new THREE.Raycaster();
+      const tipPosition = new THREE.Vector3();
+      indexTip.getWorldPosition(tipPosition);
+      
+      const thumbTip = vrDraggedHand.joints['thumb-tip'];
+      const direction = new THREE.Vector3();
+      if (thumbTip) {
+        const thumbPosition = new THREE.Vector3();
+        thumbTip.getWorldPosition(thumbPosition);
+        direction.subVectors(tipPosition, thumbPosition).normalize();
+      } else {
+        direction.set(0, 0, -1);
+      }
+      
+      raycaster.set(tipPosition, direction);
+      const point = getIntersectionPointFromRay(raycaster);
+      
+      if (point) {
+        const worldPoint = point.clone();
+        worldPoint.applyQuaternion(cubeGroup.quaternion);
+        worldPoint.add(cubeGroup.position);
+        
+        vrDraggedDot.mesh.position.copy(worldPoint);
+        vrDraggedDot.shadow.position.set(point.x, -cubeSize/2, point.z);
+        
+        if (vrDraggedDot.crosshairs) {
+          cubeGroup.remove(vrDraggedDot.crosshairs);
+          vrDraggedDot.crosshairs = createHoverLines(point, true);
+          cubeGroup.add(vrDraggedDot.crosshairs);
+        }
+        
+        const halfSize = cubeSize / 2;
+        vrDraggedDot.x = (point.x + halfSize) / cubeSize;
+        vrDraggedDot.y = (point.y + halfSize) / cubeSize;
+        vrDraggedDot.z = (point.z + halfSize) / cubeSize;
+        
+        vrDraggedDot.x = Math.max(0, Math.min(1, vrDraggedDot.x));
+        vrDraggedDot.y = Math.max(0, Math.min(1, vrDraggedDot.y));
+        vrDraggedDot.z = Math.max(0, Math.min(1, vrDraggedDot.z));
+        
+        updateDotAudio(vrDraggedDot);
+      }
+    }
+  }
+  
   // VR controller raycasting - check each frame for interaction
   if (renderer.xr.isPresenting) {
     controllers.forEach((controller, index) => {
