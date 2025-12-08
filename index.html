@@ -11,10 +11,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <!-- GLTFLoader for loading .glb models -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- VRButton helper -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
 </head>
 <body>
   <h1>Timbre Box</h1>
-  <p id="info">Click on the 3D timbre cube to place dots. Based on Leah Reid's timbre space research.</p>
+  <p id="info">Click on the 3D timbre cube to place dots. In VR, use controllers or hand tracking. Based on Leah Reid's timbre space research.</p>
+  <div id="vr-button-container"></div>
   
   <div class="main-container">
     <div id="container"></div>

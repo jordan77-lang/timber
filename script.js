@@ -19,7 +19,57 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
+renderer.xr.enabled = true;
 renderContainer.appendChild(renderer.domElement);
+
+// WebXR setup
+let xrSession = null;
+let xrRefSpace = null;
+const controllers = [];
+const controllerGrips = [];
+
+// Add VR button if WebXR is supported
+if (navigator.xr) {
+  navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+    if (supported) {
+      const vrButton = THREE.VRButton.createButton(renderer);
+      document.getElementById('vr-button-container').appendChild(vrButton);
+    }
+  });
+}
+
+// Controller setup
+function setupController(index) {
+  const controller = renderer.xr.getController(index);
+  controller.addEventListener('selectstart', onVRSelectStart);
+  controller.addEventListener('selectend', onVRSelectEnd);
+  controller.addEventListener('select', onVRSelect);
+  scene.add(controller);
+  controllers[index] = controller;
+
+  const controllerGrip = renderer.xr.getControllerGrip(index);
+  scene.add(controllerGrip);
+  controllerGrips[index] = controllerGrip;
+
+  // Add ray line for controller
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0, 0, -1)
+  ]);
+  const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffff00 }));
+  line.name = 'line';
+  line.scale.z = 5;
+  controller.add(line);
+
+  return controller;
+}
+
+setupController(0);
+setupController(1);
+
+// VR interaction state
+let vrDraggedDot = null;
+let vrDraggedController = null;
 
 // --- BUILD TIMBRE CUBE ---
 const cubeGroup = new THREE.Group();
@@ -240,6 +290,19 @@ scene.fog = new THREE.Fog(0x000000, 5, 15);
 
 camera.position.set(3.5, 3.2, 3.5);
 camera.lookAt(0, 0, 0);
+
+// Position cube for VR - move it in front of user when in VR mode
+renderer.xr.addEventListener('sessionstart', () => {
+  cubeGroup.position.set(0, 1.2, -2.5);
+  cubeGroup.scale.setScalar(0.6);
+});
+
+renderer.xr.addEventListener('sessionend', () => {
+  cubeGroup.position.set(0, 0, 0);
+  cubeGroup.scale.setScalar(1);
+  camera.position.set(3.5, 3.2, 3.5);
+  camera.lookAt(0, 0, 0);
+});
 
 // --- AXIS LABELS ---
 function createAxisLabels() {
@@ -1138,6 +1201,115 @@ function onMouseUp(event) {
   draggingHandle = false;
 }
 
+// --- VR INTERACTION HANDLERS ---
+function onVRSelectStart(event) {
+  const controller = event.target;
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  
+  const raycaster = new THREE.Raycaster();
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+  
+  const dotMeshes = dots.map(d => d.mesh);
+  const intersects = raycaster.intersectObjects(dotMeshes);
+  
+  if (intersects.length > 0) {
+    const clickedMesh = intersects[0].object;
+    vrDraggedDot = dots.find(d => d.mesh === clickedMesh);
+    vrDraggedController = controller;
+  }
+}
+
+function onVRSelectEnd(event) {
+  vrDraggedDot = null;
+  vrDraggedController = null;
+}
+
+function onVRSelect(event) {
+  if (vrDraggedDot) return; // Was dragging, don't place new dot
+  
+  const controller = event.target;
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(controller.matrixWorld);
+  
+  const raycaster = new THREE.Raycaster();
+  raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+  raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+  
+  const intersects = raycaster.intersectObject(invisibleCube);
+  
+  if (intersects.length > 0) {
+    // Convert world intersection to local cube coordinates
+    const worldPoint = intersects[0].point;
+    const localPoint = cubeGroup.worldToLocal(worldPoint.clone());
+    
+    // Clamp to cube bounds
+    const halfSize = cubeSize / 2;
+    localPoint.x = Math.max(-halfSize, Math.min(halfSize, localPoint.x));
+    localPoint.y = Math.max(-halfSize, Math.min(halfSize, localPoint.y));
+    localPoint.z = Math.max(-halfSize, Math.min(halfSize, localPoint.z));
+    
+    if (Tone.context.state !== 'running') {
+      Tone.start();
+    }
+    
+    addDotAtPoint(localPoint);
+  }
+}
+
+function handleVRControllerRaycast(controller, index) {
+  if (vrDraggedDot && vrDraggedController === controller) {
+    const tempMatrix = new THREE.Matrix4();
+    tempMatrix.identity().extractRotation(controller.matrixWorld);
+    
+    const raycaster = new THREE.Raycaster();
+    raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+    
+    const intersects = raycaster.intersectObject(invisibleCube);
+    
+    if (intersects.length > 0) {
+      const worldPoint = intersects[0].point;
+      const localPoint = cubeGroup.worldToLocal(worldPoint.clone());
+      
+      const halfSize = cubeSize / 2;
+      const outsideBounds = localPoint.x < -halfSize || localPoint.x > halfSize ||
+                           localPoint.y < -halfSize || localPoint.y > halfSize ||
+                           localPoint.z < -halfSize || localPoint.z > halfSize;
+      
+      if (outsideBounds) {
+        vrDraggedDot.mesh.visible = false;
+        return;
+      }
+      
+      localPoint.x = Math.max(-halfSize, Math.min(halfSize, localPoint.x));
+      localPoint.y = Math.max(-halfSize, Math.min(halfSize, localPoint.y));
+      localPoint.z = Math.max(-halfSize, Math.min(halfSize, localPoint.z));
+      
+      vrDraggedDot.mesh.visible = true;
+      vrDraggedDot.mesh.position.copy(localPoint);
+      vrDraggedDot.shadow.position.set(localPoint.x, -halfSize, localPoint.z);
+      
+      if (vrDraggedDot.crosshairs) {
+        cubeGroup.remove(vrDraggedDot.crosshairs);
+        vrDraggedDot.crosshairs = createHoverLines(localPoint, true);
+        cubeGroup.add(vrDraggedDot.crosshairs);
+      }
+      
+      vrDraggedDot.x = (localPoint.x + halfSize) / cubeSize;
+      vrDraggedDot.y = (localPoint.y + halfSize) / cubeSize;
+      vrDraggedDot.z = (localPoint.z + halfSize) / cubeSize;
+      
+      vrDraggedDot.x = Math.max(0, Math.min(1, vrDraggedDot.x));
+      vrDraggedDot.y = Math.max(0, Math.min(1, vrDraggedDot.y));
+      vrDraggedDot.z = Math.max(0, Math.min(1, vrDraggedDot.z));
+      
+      updateDotAudio(vrDraggedDot);
+    }
+  }
+}
+
 renderer.domElement.addEventListener('click', onCanvasClick);
 renderer.domElement.addEventListener('mousedown', onMouseDown);
 renderer.domElement.addEventListener('mousemove', onMouseMove);
@@ -1222,7 +1394,14 @@ drawSpectrograph();
 
 // --- ANIMATION LOOP ---
 function animate() {
-  requestAnimationFrame(animate);
+  // VR controller raycasting - check each frame for interaction
+  if (renderer.xr.isPresenting) {
+    controllers.forEach((controller, index) => {
+      if (controller && controller.visible) {
+        handleVRControllerRaycast(controller, index);
+      }
+    });
+  }
   
   // Flip Spectral Flux label based on viewing angle
   // No longer needed - we have two separate labels facing opposite directions
@@ -1297,7 +1476,9 @@ function animate() {
   
   renderer.render(scene, camera);
 }
-animate();
+
+// Use WebXR render loop
+renderer.setAnimationLoop(animate);
 
 // --- BUTTONS ---
 document.getElementById('download').addEventListener('click', () => {
