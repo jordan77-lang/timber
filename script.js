@@ -71,6 +71,8 @@ setupController(1);
 let vrDraggedDot = null;
 let vrDraggedController = null;
 let vrDraggedHand = null;
+let vrDraggedHandle = null;
+let vrDraggedHandRotating = null;
 const hands = [];
 const handModels = [];
 
@@ -1268,6 +1270,7 @@ function onVRSelectEnd(event) {
 
 function onHandPinchStart(event) {
   const hand = event.target;
+  
   const indexTip = hand.joints['index-finger-tip'];
   if (!indexTip) return;
   
@@ -1287,6 +1290,15 @@ function onHandPinchStart(event) {
   
   raycaster.set(tipPosition, direction);
   
+  // Check for handle grab first
+  const handleIntersects = raycaster.intersectObjects(handleBalls);
+  if (handleIntersects.length > 0) {
+    vrDraggedHandle = handleIntersects[0].object;
+    vrDraggedHandRotating = hand;
+    return;
+  }
+  
+  // Check for existing dot drag
   const dotMeshes = dots.map(d => d.mesh);
   const intersects = raycaster.intersectObjects(dotMeshes);
   
@@ -1295,6 +1307,7 @@ function onHandPinchStart(event) {
     vrDraggedDot = dots.find(d => d.mesh === clickedMesh);
     vrDraggedHand = hand;
   } else {
+    // Place new dot
     const point = getIntersectionPointFromRay(raycaster);
     if (point) {
       if (Tone.context.state !== 'running') {
@@ -1309,6 +1322,10 @@ function onHandPinchEnd(event) {
   if (vrDraggedDot && vrDraggedHand === event.target) {
     vrDraggedDot = null;
     vrDraggedHand = null;
+  }
+  if (vrDraggedHandRotating === event.target) {
+    vrDraggedHandle = null;
+    vrDraggedHandRotating = null;
   }
 }
 
@@ -1651,6 +1668,26 @@ function animate() {
       }
     }
   });
+  
+  // Handle rotation with hands
+  if (vrDraggedHandle && vrDraggedHandRotating) {
+    const indexTip = vrDraggedHandRotating.joints['index-finger-tip'];
+    if (indexTip) {
+      const currentPos = new THREE.Vector3();
+      indexTip.getWorldPosition(currentPos);
+      
+      if (!vrDraggedHandRotating.userData.lastHandPos) {
+        vrDraggedHandRotating.userData.lastHandPos = currentPos.clone();
+      } else {
+        const delta = currentPos.clone().sub(vrDraggedHandRotating.userData.lastHandPos);
+        cubeGroup.rotation.y += delta.x * 2;
+        cubeGroup.rotation.x += delta.y * 2;
+        vrDraggedHandRotating.userData.lastHandPos.copy(currentPos);
+      }
+    }
+  } else if (vrDraggedHandRotating) {
+    vrDraggedHandRotating.userData.lastHandPos = null;
+  }
   
   // Handle hand dragging
   if (vrDraggedDot && vrDraggedHand) {
