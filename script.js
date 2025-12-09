@@ -48,7 +48,7 @@ function createVRButton(isSupported) {
       } else {
         navigator.xr.requestSession('immersive-vr', {
           requiredFeatures: ['local-floor'],
-          optionalFeatures: ['hand-tracking', 'bounded-reference-space']
+          optionalFeatures: ['hand-tracking']
         }).then((session) => {
           renderer.xr.setSession(session);
           button.textContent = 'EXIT VR';
@@ -1938,29 +1938,31 @@ function animate() {
   
   // Update VR UI and spectrograph positions to follow camera
   if (renderer.xr.isPresenting && vrSpectrographPlane) {
-    const camera = renderer.xr.getCamera();
+    const xrCamera = renderer.xr.getCamera();
     
-    // Get camera direction
-    const cameraDirection = new THREE.Vector3();
-    camera.getWorldDirection(cameraDirection);
-    
-    // Position spectrograph behind the cube from camera's perspective
-    const distanceBehindCube = 3.5;
-    const spectroPos = cubeGroup.position.clone();
-    spectroPos.add(cameraDirection.multiplyScalar(-distanceBehindCube));
-    vrSpectrographPlane.position.copy(spectroPos);
-    vrSpectrographPlane.lookAt(camera.position);
-    
-    // Keep UI panel in a fixed position relative to cube
-    if (vrUIPanel) {
-      const uiPos = cubeGroup.position.clone();
-      const rightOffset = new THREE.Vector3();
-      camera.getWorldDirection(rightOffset);
-      rightOffset.cross(camera.up).normalize().multiplyScalar(-2);
-      const upOffset = camera.up.clone().normalize().multiplyScalar(1.5);
-      uiPos.add(rightOffset).add(upOffset);
-      vrUIPanel.position.copy(uiPos);
-      vrUIPanel.lookAt(camera.position);
+    if (xrCamera) {
+      // Get camera direction
+      const cameraDirection = new THREE.Vector3();
+      xrCamera.getWorldDirection(cameraDirection);
+      
+      // Position spectrograph behind the cube from camera's perspective
+      const distanceBehindCube = 3.5;
+      const spectroPos = cubeGroup.position.clone();
+      spectroPos.add(cameraDirection.multiplyScalar(-distanceBehindCube));
+      vrSpectrographPlane.position.copy(spectroPos);
+      vrSpectrographPlane.lookAt(xrCamera.position);
+      
+      // Keep UI panel in a fixed position relative to cube
+      if (vrUIPanel) {
+        const uiPos = cubeGroup.position.clone();
+        const rightOffset = new THREE.Vector3();
+        xrCamera.getWorldDirection(rightOffset);
+        rightOffset.cross(xrCamera.up).normalize().multiplyScalar(-2);
+        const upOffset = xrCamera.up.clone().normalize().multiplyScalar(1.5);
+        uiPos.add(rightOffset).add(upOffset);
+        vrUIPanel.position.copy(uiPos);
+        vrUIPanel.lookAt(xrCamera.position);
+      }
     }
   }
   
