@@ -150,6 +150,8 @@ let vrDraggedController = null;
 let vrDraggedHand = null;
 let vrDraggedHandle = null;
 let vrDraggedHandRotating = null;
+let lastButtonClickTime = 0;
+const BUTTON_CLICK_COOLDOWN = 500; // ms to prevent double-clicks
 const hands = [];
 const handModels = [];
 
@@ -161,29 +163,12 @@ function setupHand(index) {
   scene.add(hand);
   hands[index] = hand;
   
-  // Add spheres for hand joints visualization
-  const handModel = {
-    joints: {},
-    spheres: {}
+  // Store references to joint spheres - they'll be created dynamically when hand connects
+  handModels[index] = {
+    spheres: {},
+    pointerRay: null
   };
   
-  const sphereGeometry = new THREE.SphereGeometry(0.008, 8, 8);
-  const sphereMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 });
-  
-  hand.addEventListener('connected', (event) => {
-    const xrInputSource = event.data;
-    if (xrInputSource.hand) {
-      const joints = ['wrist', 'thumb-tip', 'index-finger-tip', 'middle-finger-tip', 'ring-finger-tip', 'pinky-finger-tip'];
-      joints.forEach(jointName => {
-        const sphere = new THREE.Mesh(sphereGeometry.clone(), sphereMaterial.clone());
-        sphere.visible = false;
-        hand.add(sphere);
-        handModel.spheres[jointName] = sphere;
-      });
-    }
-  });
-  
-  handModels[index] = handModel;
   return hand;
 }
 
@@ -1386,13 +1371,27 @@ function onHandPinchStart(event) {
   
   raycaster.set(tipPosition, direction);
   
-  // Check for UI button clicks first
+  // Check for UI button clicks FIRST - highest priority
   if (vrUIPanel) {
     const buttons = vrUIPanel.children;
-    const uiIntersects = raycaster.intersectObjects(buttons);
+    const uiIntersects = raycaster.intersectObjects(buttons, false);
     if (uiIntersects.length > 0) {
+      const now = Date.now();
+      // Debounce: prevent multiple clicks within cooldown period
+      if (now - lastButtonClickTime < BUTTON_CLICK_COOLDOWN) {
+        return; // Exit early during cooldown
+      }
+      lastButtonClickTime = now;
+      
       const button = uiIntersects[0].object;
       const action = button.userData.buttonAction;
+      
+      // Visual feedback: flash button
+      const originalColor = button.material.color.getHex();
+      button.material.color.setHex(0xffffff);
+      setTimeout(() => {
+        button.material.color.setHex(originalColor);
+      }, 150);
       
       if (action === 'download') {
         const link = document.createElement('a');
@@ -1408,7 +1407,7 @@ function onHandPinchStart(event) {
         cubeGroup.rotation.y = Math.PI / 12;
         cubeGroup.rotation.z = 0;
       }
-      return;
+      return; // CRITICAL: Stop processing after button click
     }
   }
   
@@ -1454,15 +1453,29 @@ function onHandPinchEnd(event) {
 }
 
 function getIntersectionPointFromRay(raycaster) {
+  // Check if ray intersects the invisible cube at all
   const boxIntersects = raycaster.intersectObject(invisibleCube);
   if (boxIntersects.length === 0) return null;
   
+  // Use the FIRST intersection point (entry point into cube volume)
+  // This allows placement anywhere inside the cube, not just on faces
   const intersectPoint = boxIntersects[0].point;
+  
+  // Transform to local cube coordinates
   const intersectLocal = intersectPoint.clone();
   intersectLocal.sub(cubeGroup.position);
   intersectLocal.applyQuaternion(cubeGroup.quaternion.clone().invert());
   
   const halfSize = cubeSize / 2;
+  
+  // Verify the point is within cube bounds (should be true if intersection worked)
+  if (Math.abs(intersectLocal.x) > halfSize ||
+      Math.abs(intersectLocal.y) > halfSize ||
+      Math.abs(intersectLocal.z) > halfSize) {
+    return null; // Safety check: point somehow outside bounds
+  }
+  
+  // Clamp to exact bounds (for floating point precision)
   intersectLocal.x = Math.max(-halfSize, Math.min(halfSize, intersectLocal.x));
   intersectLocal.y = Math.max(-halfSize, Math.min(halfSize, intersectLocal.y));
   intersectLocal.z = Math.max(-halfSize, Math.min(halfSize, intersectLocal.z));
@@ -1708,16 +1721,18 @@ function createVRUI() {
   scene.add(panelGroup);
   vrUIPanel = panelGroup;
   
-  // Create floating spectrograph
+  // Create floating spectrograph - will be positioned behind cube in animate loop
   vrSpectrographTexture = new THREE.CanvasTexture(spectroCanvas);
   const spectroMaterial = new THREE.MeshBasicMaterial({ 
     map: vrSpectrographTexture,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.95
   });
-  const spectroGeometry = new THREE.PlaneGeometry(0.8, 0.5);
+  const spectroGeometry = new THREE.PlaneGeometry(1.2, 0.7); // Larger for better visibility
   vrSpectrographPlane = new THREE.Mesh(spectroGeometry, spectroMaterial);
-  vrSpectrographPlane.position.set(1.5, 1.5, -1);
-  vrSpectrographPlane.lookAt(camera.position);
+  // Initial position - will be updated each frame to stay behind cube
+  vrSpectrographPlane.position.set(0, 0, 3);
   scene.add(vrSpectrographPlane);
 }
 
@@ -1797,15 +1812,61 @@ function animate() {
     if (hand && hand.joints) {
       const handModel = handModels[index];
       if (handModel) {
-        Object.keys(hand.joints).forEach(jointName => {
-          const joint = hand.joints[jointName];
-          if (joint && handModel.spheres[jointName]) {
+        // Create or update joint spheres dynamically
+        for (const [jointName, joint] of Object.entries(hand.joints)) {
+          if (joint) {
+            // Create sphere if it doesn't exist yet
+            if (!handModel.spheres[jointName]) {
+              const isTip = jointName.includes('tip');
+              const radius = isTip ? 0.012 : 0.008;
+              const sphereGeometry = new THREE.SphereGeometry(radius, 16, 16);
+              const sphereMaterial = new THREE.MeshStandardMaterial({
+                color: isTip ? 0x00ff88 : 0x00aaff,
+                emissive: isTip ? 0x00ff88 : 0x00aaff,
+                emissiveIntensity: 0.5,
+                metalness: 0.8,
+                roughness: 0.2
+              });
+              const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+              sphere.castShadow = true;
+              hand.add(sphere);
+              handModel.spheres[jointName] = sphere;
+            }
+            
+            // Update sphere position from joint
             const sphere = handModel.spheres[jointName];
             sphere.position.copy(joint.position);
             sphere.quaternion.copy(joint.quaternion);
             sphere.visible = renderer.xr.isPresenting;
           }
-        });
+        }
+        
+        // Create/update pointer ray from index finger tip
+        const indexTip = hand.joints['index-finger-tip'];
+        if (indexTip) {
+          // Create ray if it doesn't exist
+          if (!handModel.pointerRay) {
+            const rayGeometry = new THREE.BufferGeometry().setFromPoints([
+              new THREE.Vector3(0, 0, 0),
+              new THREE.Vector3(0, 0, -1)
+            ]);
+            const rayLine = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ 
+              color: 0x88ff00,
+              linewidth: 2,
+              transparent: true,
+              opacity: 0.6
+            }));
+            rayLine.scale.z = 5;
+            hand.add(rayLine);
+            handModel.pointerRay = rayLine;
+          }
+          
+          // Update ray position and direction
+          handModel.pointerRay.position.copy(indexTip.position);
+          handModel.pointerRay.quaternion.copy(indexTip.quaternion);
+          handModel.pointerRay.rotateX(-Math.PI / 2);
+          handModel.pointerRay.visible = renderer.xr.isPresenting && !vrDraggedDot && !vrDraggedHandle;
+        }
       }
       
       // Show hover crosshairs when not dragging (matching mouse behavior)
@@ -1942,16 +2003,25 @@ function animate() {
       const xrCamera = renderer.xr.getCamera();
       
       if (xrCamera) {
-        // Get camera direction
+        // Get camera direction (where user is looking from)
         const cameraDirection = new THREE.Vector3();
         xrCamera.getWorldDirection(cameraDirection);
         
-        // Position spectrograph behind the cube from camera's perspective
-        const distanceBehindCube = 3.5;
+        // Calculate vector from camera to cube
+        const cameraToCube = new THREE.Vector3();
+        cameraToCube.subVectors(cubeGroup.position, xrCamera.position).normalize();
+        
+        // Position spectrograph behind cube (opposite side from camera)
+        // This ensures it's always visible behind the cube relative to user
+        const distanceBehindCube = 2.5;
         const spectroPos = cubeGroup.position.clone();
-        spectroPos.add(cameraDirection.multiplyScalar(-distanceBehindCube));
+        spectroPos.add(cameraToCube.multiplyScalar(distanceBehindCube));
+        
         vrSpectrographPlane.position.copy(spectroPos);
-        vrSpectrographPlane.lookAt(xrCamera.position);
+        vrSpectrographPlane.lookAt(xrCamera.position); // Always face the user
+        
+        // Update texture
+        vrSpectrographTexture.needsUpdate = true;
         
         // Keep UI panel in a fixed position relative to cube
         if (vrUIPanel) {
