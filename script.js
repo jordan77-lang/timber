@@ -1330,6 +1330,16 @@ function onVRSelectStart(event) {
   raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
   raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
   
+  // Check for handle grab first
+  const handleIntersects = raycaster.intersectObjects(handleBalls);
+  if (handleIntersects.length > 0) {
+    vrDraggedHandle = handleIntersects[0].object;
+    vrDraggedController = controller;
+    controller.userData.lastControllerPos = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+    return;
+  }
+  
+  // Check for dot drag
   const dotMeshes = dots.map(d => d.mesh);
   const intersects = raycaster.intersectObjects(dotMeshes);
   
@@ -1341,8 +1351,15 @@ function onVRSelectStart(event) {
 }
 
 function onVRSelectEnd(event) {
-  vrDraggedDot = null;
-  vrDraggedController = null;
+  const controller = event.target;
+  if (vrDraggedController === controller) {
+    vrDraggedDot = null;
+    vrDraggedHandle = null;
+    vrDraggedController = null;
+    if (controller.userData.lastControllerPos) {
+      delete controller.userData.lastControllerPos;
+    }
+  }
 }
 
 function onHandPinchStart(event) {
@@ -1460,6 +1477,23 @@ function onVRSelect(event) {
 }
 
 function handleVRControllerRaycast(controller, index) {
+  // Handle rotation with controller
+  if (vrDraggedHandle && vrDraggedController === controller) {
+    const currentPos = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+    
+    if (controller.userData.lastControllerPos) {
+      const delta = currentPos.clone().sub(controller.userData.lastControllerPos);
+      // Rotate cube based on controller movement
+      cubeGroup.rotation.y += delta.x * 3;
+      cubeGroup.rotation.x -= delta.y * 3;
+      controller.userData.lastControllerPos.copy(currentPos);
+    } else {
+      controller.userData.lastControllerPos = currentPos.clone();
+    }
+    return;
+  }
+  
+  // Handle dot dragging with controller
   if (vrDraggedDot && vrDraggedController === controller) {
     const tempMatrix = new THREE.Matrix4();
     tempMatrix.identity().extractRotation(controller.matrixWorld);
