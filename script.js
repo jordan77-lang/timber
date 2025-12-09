@@ -198,6 +198,8 @@ scene.add(cubeGroup);
 const cubeSize = 4;
 const faces = [];
 let hoverLines = null;
+let vrHoverLinesLeft = null;
+let vrHoverLinesRight = null;
 let loadedModel = null;
 let invisibleCube = null;
 let spectralFluxLabel = null;
@@ -1426,16 +1428,19 @@ function onHandPinchStart(event) {
     const clickedMesh = intersects[0].object;
     vrDraggedDot = dots.find(d => d.mesh === clickedMesh);
     vrDraggedHand = hand;
-  } else {
-    // Place new dot
-    const point = getIntersectionPointFromRay(raycaster);
-    if (point) {
-      if (Tone.context.state !== 'running') {
-        Tone.start();
-      }
-      addDotAtPoint(point);
-    }
+    return; // Don't place new dot when dragging
   }
+  
+  // ONLY place new dot if pointing at the cube (matching mouse behavior)
+  const point = getIntersectionPointFromRay(raycaster);
+  if (point) {
+    if (Tone.context.state !== 'running') {
+      Tone.start();
+    }
+    addDotAtPoint(point);
+  }
+  // If point is null (not pointing at cube), do nothing - just like mouse click
+}
 }
 
 function onHandPinchEnd(event) {
@@ -1788,7 +1793,7 @@ function animate() {
     vrSpectrographTexture.needsUpdate = true;
   }
   
-  // Update hand joint visualizations
+  // Update hand joint visualizations and show hover crosshairs
   hands.forEach((hand, index) => {
     if (hand && hand.joints) {
       const handModel = handModels[index];
@@ -1803,8 +1808,65 @@ function animate() {
           }
         });
       }
+      
+      // Show hover crosshairs when not dragging (matching mouse behavior)
+      if (renderer.xr.isPresenting && !vrDraggedDot && !vrDraggedHandle) {
+        const indexTip = hand.joints['index-finger-tip'];
+        if (indexTip) {
+          const raycaster = new THREE.Raycaster();
+          const tipPosition = new THREE.Vector3();
+          indexTip.getWorldPosition(tipPosition);
+          
+          const thumbTip = hand.joints['thumb-tip'];
+          const direction = new THREE.Vector3();
+          if (thumbTip) {
+            const thumbPosition = new THREE.Vector3();
+            thumbTip.getWorldPosition(thumbPosition);
+            direction.subVectors(tipPosition, thumbPosition).normalize();
+          } else {
+            direction.set(0, 0, -1);
+          }
+          
+          raycaster.set(tipPosition, direction);
+          const point = getIntersectionPointFromRay(raycaster);
+          
+          // Determine which hover lines to update (left or right hand)
+          const vrHoverLines = index === 0 ? vrHoverLinesLeft : vrHoverLinesRight;
+          const isLeft = index === 0;
+          
+          // Remove old hover lines for this hand
+          if (isLeft && vrHoverLinesLeft) {
+            cubeGroup.remove(vrHoverLinesLeft);
+            vrHoverLinesLeft = null;
+          } else if (!isLeft && vrHoverLinesRight) {
+            cubeGroup.remove(vrHoverLinesRight);
+            vrHoverLinesRight = null;
+          }
+          
+          // Create new hover lines if pointing at cube
+          if (point) {
+            const newHoverLines = createHoverLines(point);
+            cubeGroup.add(newHoverLines);
+            if (isLeft) {
+              vrHoverLinesLeft = newHoverLines;
+            } else {
+              vrHoverLinesRight = newHoverLines;
+            }
+          }
+        }
+      }
     }
   });
+  
+  // Clear VR hover lines when dragging starts
+  if ((vrDraggedDot || vrDraggedHandle) && vrHoverLinesLeft) {
+    cubeGroup.remove(vrHoverLinesLeft);
+    vrHoverLinesLeft = null;
+  }
+  if ((vrDraggedDot || vrDraggedHandle) && vrHoverLinesRight) {
+    cubeGroup.remove(vrHoverLinesRight);
+    vrHoverLinesRight = null;
+  }
   
   // Handle rotation with hands
   if (vrDraggedHandle && vrDraggedHandRotating) {
