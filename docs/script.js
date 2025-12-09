@@ -1938,31 +1938,36 @@ function animate() {
   
   // Update VR UI and spectrograph positions to follow camera
   if (renderer.xr.isPresenting && vrSpectrographPlane) {
-    const xrCamera = renderer.xr.getCamera();
-    
-    if (xrCamera) {
-      // Get camera direction
-      const cameraDirection = new THREE.Vector3();
-      xrCamera.getWorldDirection(cameraDirection);
+    try {
+      const xrCamera = renderer.xr.getCamera();
       
-      // Position spectrograph behind the cube from camera's perspective
-      const distanceBehindCube = 3.5;
-      const spectroPos = cubeGroup.position.clone();
-      spectroPos.add(cameraDirection.multiplyScalar(-distanceBehindCube));
-      vrSpectrographPlane.position.copy(spectroPos);
-      vrSpectrographPlane.lookAt(xrCamera.position);
-      
-      // Keep UI panel in a fixed position relative to cube
-      if (vrUIPanel) {
-        const uiPos = cubeGroup.position.clone();
-        const rightOffset = new THREE.Vector3();
-        xrCamera.getWorldDirection(rightOffset);
-        rightOffset.cross(xrCamera.up).normalize().multiplyScalar(-2);
-        const upOffset = xrCamera.up.clone().normalize().multiplyScalar(1.5);
-        uiPos.add(rightOffset).add(upOffset);
-        vrUIPanel.position.copy(uiPos);
-        vrUIPanel.lookAt(xrCamera.position);
+      if (xrCamera) {
+        // Get camera direction
+        const cameraDirection = new THREE.Vector3();
+        xrCamera.getWorldDirection(cameraDirection);
+        
+        // Position spectrograph behind the cube from camera's perspective
+        const distanceBehindCube = 3.5;
+        const spectroPos = cubeGroup.position.clone();
+        spectroPos.add(cameraDirection.multiplyScalar(-distanceBehindCube));
+        vrSpectrographPlane.position.copy(spectroPos);
+        vrSpectrographPlane.lookAt(xrCamera.position);
+        
+        // Keep UI panel in a fixed position relative to cube
+        if (vrUIPanel) {
+          const uiPos = cubeGroup.position.clone();
+          const rightOffset = new THREE.Vector3();
+          xrCamera.getWorldDirection(rightOffset);
+          rightOffset.cross(xrCamera.up).normalize().multiplyScalar(-2);
+          const upOffset = xrCamera.up.clone().normalize().multiplyScalar(1.5);
+          uiPos.add(rightOffset).add(upOffset);
+          vrUIPanel.position.copy(uiPos);
+          vrUIPanel.lookAt(xrCamera.position);
+        }
       }
+    } catch (err) {
+      // Silently catch VR camera errors during initialization
+      console.warn('VR camera not ready yet:', err.message);
     }
   }
   
