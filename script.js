@@ -28,14 +28,64 @@ let xrRefSpace = null;
 const controllers = [];
 const controllerGrips = [];
 
+// Create custom VR button if THREE.VRButton doesn't exist
+function createVRButton() {
+  const button = document.createElement('button');
+  button.style.cssText = 'position: relative; padding: 12px 24px; border: 1px solid white; background: rgba(0,0,0,0.8); color: white; font-size: 13px; text-align: center; opacity: 0.9; outline: none; z-index: 999; cursor: pointer; font-family: sans-serif; margin: 10px;';
+  button.textContent = 'ENTER VR';
+  
+  button.onclick = function() {
+    if (renderer.xr.isPresenting) {
+      renderer.xr.getSession().end();
+    } else {
+      navigator.xr.requestSession('immersive-vr', {
+        requiredFeatures: ['local-floor'],
+        optionalFeatures: ['hand-tracking', 'bounded-reference-space']
+      }).then((session) => {
+        renderer.xr.setSession(session);
+        button.textContent = 'EXIT VR';
+        session.addEventListener('end', () => {
+          button.textContent = 'ENTER VR';
+        });
+      }).catch((err) => {
+        console.error('Failed to start VR session:', err);
+        alert('Failed to start VR: ' + err.message);
+      });
+    }
+  };
+  
+  return button;
+}
+
 // Add VR button if WebXR is supported
 if (navigator.xr) {
   navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+    console.log('VR supported:', supported);
     if (supported) {
-      const vrButton = THREE.VRButton.createButton(renderer);
-      document.getElementById('vr-button-container').appendChild(vrButton);
+      let vrButton;
+      // Try to use THREE.VRButton if available, otherwise use custom
+      if (typeof THREE !== 'undefined' && THREE.VRButton) {
+        vrButton = THREE.VRButton.createButton(renderer);
+      } else {
+        vrButton = createVRButton();
+      }
+      
+      const vrContainer = document.getElementById('vr-button-container');
+      console.log('VR container found:', vrContainer);
+      if (vrContainer) {
+        vrContainer.appendChild(vrButton);
+        console.log('VR button added');
+      } else {
+        document.body.insertBefore(vrButton, document.body.firstChild);
+      }
+    } else {
+      console.log('VR not supported on this device');
     }
+  }).catch((err) => {
+    console.error('Error checking VR support:', err);
   });
+} else {
+  console.log('navigator.xr not available');
 }
 
 // Controller setup
