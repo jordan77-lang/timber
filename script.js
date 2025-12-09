@@ -1441,7 +1441,6 @@ function onHandPinchStart(event) {
   }
   // If point is null (not pointing at cube), do nothing - just like mouse click
 }
-}
 
 function onHandPinchEnd(event) {
   if (vrDraggedDot && vrDraggedHand === event.target) {
