@@ -1379,11 +1379,7 @@ let vrDraggedInfo = {
   handle: null,
   source: null, // Will be the controller or hand object
   isRotating: false,
-  isDragging: false
 };
-const BUTTON_CLICK_COOLDOWN = 500; // ms
-
-// --- Unified Event Handlers ---
 
 // This single function will now handle the start of any primary VR action.
 async function handleVRInputStart(event) {
