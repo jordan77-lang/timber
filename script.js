@@ -1351,25 +1351,11 @@ function onVRSelectEnd(event) {
 
 function onHandPinchStart(event) {
   const hand = event.target;
-  
-  const indexTip = hand.joints['index-finger-tip'];
-  if (!indexTip) return;
+  const handRay = getHandRay(hand);
+  if (!handRay) return;
   
   const raycaster = new THREE.Raycaster();
-  const tipPosition = new THREE.Vector3();
-  indexTip.getWorldPosition(tipPosition);
-  
-  const thumbTip = hand.joints['thumb-tip'];
-  const direction = new THREE.Vector3();
-  if (thumbTip) {
-    const thumbPosition = new THREE.Vector3();
-    thumbTip.getWorldPosition(thumbPosition);
-    direction.subVectors(tipPosition, thumbPosition).normalize();
-  } else {
-    direction.set(0, 0, -1);
-  }
-  
-  raycaster.set(tipPosition, direction);
+  raycaster.set(handRay.origin, handRay.direction);
   
   // Check for UI button clicks FIRST - highest priority
   if (vrUIPanel) {
@@ -1481,6 +1467,21 @@ function getIntersectionPointFromRay(raycaster) {
   intersectLocal.z = Math.max(-halfSize, Math.min(halfSize, intersectLocal.z));
   
   return intersectLocal;
+}
+
+function getHandRay(hand) {
+  if (!hand || !hand.joints) return null;
+  const indexTip = hand.joints['index-finger-tip'];
+  if (!indexTip) return null;
+  
+  const origin = new THREE.Vector3();
+  indexTip.getWorldPosition(origin);
+  
+  const worldQuaternion = new THREE.Quaternion();
+  indexTip.getWorldQuaternion(worldQuaternion);
+  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(worldQuaternion).normalize();
+  
+  return { origin, direction, indexTip };
 }
 
 function onVRSelect(event) {
@@ -1812,6 +1813,7 @@ function animate() {
     if (hand && hand.joints) {
       const handModel = handModels[index];
       if (handModel) {
+        const handRay = getHandRay(hand);
         // Create or update joint spheres dynamically
         for (const [jointName, joint] of Object.entries(hand.joints)) {
           if (joint) {
@@ -1842,7 +1844,7 @@ function animate() {
         }
         
         // Create/update pointer ray from index finger tip
-        const indexTip = hand.joints['index-finger-tip'];
+        const indexTip = handRay ? handRay.indexTip : hand.joints['index-finger-tip'];
         if (indexTip) {
           // Create ray if it doesn't exist
           if (!handModel.pointerRay) {
@@ -1871,23 +1873,10 @@ function animate() {
       
       // Show hover crosshairs when not dragging (matching mouse behavior)
       if (renderer.xr.isPresenting && !vrDraggedDot && !vrDraggedHandle) {
-        const indexTip = hand.joints['index-finger-tip'];
-        if (indexTip) {
+        const handRay = getHandRay(hand);
+        if (handRay) {
           const raycaster = new THREE.Raycaster();
-          const tipPosition = new THREE.Vector3();
-          indexTip.getWorldPosition(tipPosition);
-          
-          const thumbTip = hand.joints['thumb-tip'];
-          const direction = new THREE.Vector3();
-          if (thumbTip) {
-            const thumbPosition = new THREE.Vector3();
-            thumbTip.getWorldPosition(thumbPosition);
-            direction.subVectors(tipPosition, thumbPosition).normalize();
-          } else {
-            direction.set(0, 0, -1);
-          }
-          
-          raycaster.set(tipPosition, direction);
+          raycaster.set(handRay.origin, handRay.direction);
           const point = getIntersectionPointFromRay(raycaster);
           
           // Determine which hover lines to update (left or right hand)
@@ -1950,23 +1939,10 @@ function animate() {
   
   // Handle hand dragging
   if (vrDraggedDot && vrDraggedHand) {
-    const indexTip = vrDraggedHand.joints['index-finger-tip'];
-    if (indexTip) {
+    const handRay = getHandRay(vrDraggedHand);
+    if (handRay) {
       const raycaster = new THREE.Raycaster();
-      const tipPosition = new THREE.Vector3();
-      indexTip.getWorldPosition(tipPosition);
-      
-      const thumbTip = vrDraggedHand.joints['thumb-tip'];
-      const direction = new THREE.Vector3();
-      if (thumbTip) {
-        const thumbPosition = new THREE.Vector3();
-        thumbTip.getWorldPosition(thumbPosition);
-        direction.subVectors(tipPosition, thumbPosition).normalize();
-      } else {
-        direction.set(0, 0, -1);
-      }
-      
-      raycaster.set(tipPosition, direction);
+      raycaster.set(handRay.origin, handRay.direction);
       const point = getIntersectionPointFromRay(raycaster);
       
       if (point) {
