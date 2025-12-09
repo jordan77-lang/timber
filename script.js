@@ -28,64 +28,91 @@ let xrRefSpace = null;
 const controllers = [];
 const controllerGrips = [];
 
-// Create custom VR button if THREE.VRButton doesn't exist
-function createVRButton() {
+// Create custom VR button
+function createVRButton(isSupported) {
   const button = document.createElement('button');
   button.style.cssText = 'position: relative; padding: 12px 24px; border: 1px solid white; background: rgba(0,0,0,0.8); color: white; font-size: 13px; text-align: center; opacity: 0.9; outline: none; z-index: 999; cursor: pointer; font-family: sans-serif; margin: 10px;';
-  button.textContent = 'ENTER VR';
   
-  button.onclick = function() {
-    if (renderer.xr.isPresenting) {
-      renderer.xr.getSession().end();
-    } else {
-      navigator.xr.requestSession('immersive-vr', {
-        requiredFeatures: ['local-floor'],
-        optionalFeatures: ['hand-tracking', 'bounded-reference-space']
-      }).then((session) => {
-        renderer.xr.setSession(session);
-        button.textContent = 'EXIT VR';
-        session.addEventListener('end', () => {
-          button.textContent = 'ENTER VR';
+  if (!isSupported) {
+    button.textContent = 'OPEN ON VR DEVICE TO ENTER VR';
+    button.style.cursor = 'default';
+    button.style.opacity = '0.6';
+    button.onclick = function() {
+      alert('WebXR not available. Please open this page on a VR device like Meta Quest.');
+    };
+  } else {
+    button.textContent = 'ENTER VR';
+    button.onclick = function() {
+      if (renderer.xr.isPresenting) {
+        renderer.xr.getSession().end();
+      } else {
+        navigator.xr.requestSession('immersive-vr', {
+          requiredFeatures: ['local-floor'],
+          optionalFeatures: ['hand-tracking', 'bounded-reference-space']
+        }).then((session) => {
+          renderer.xr.setSession(session);
+          button.textContent = 'EXIT VR';
+          session.addEventListener('end', () => {
+            button.textContent = 'ENTER VR';
+          });
+        }).catch((err) => {
+          console.error('Failed to start VR session:', err);
+          alert('Failed to start VR: ' + err.message);
         });
-      }).catch((err) => {
-        console.error('Failed to start VR session:', err);
-        alert('Failed to start VR: ' + err.message);
-      });
-    }
-  };
+      }
+    };
+  }
   
   return button;
 }
 
-// Add VR button if WebXR is supported
+// Always add VR button, regardless of support
 if (navigator.xr) {
   navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
     console.log('VR supported:', supported);
-    if (supported) {
-      let vrButton;
-      // Try to use THREE.VRButton if available, otherwise use custom
-      if (typeof THREE !== 'undefined' && THREE.VRButton) {
+    
+    let vrButton;
+    // Try to use THREE.VRButton if available and supported, otherwise use custom
+    if (supported && typeof THREE !== 'undefined' && THREE.VRButton) {
+      try {
         vrButton = THREE.VRButton.createButton(renderer);
-      } else {
-        vrButton = createVRButton();
-      }
-      
-      const vrContainer = document.getElementById('vr-button-container');
-      console.log('VR container found:', vrContainer);
-      if (vrContainer) {
-        vrContainer.appendChild(vrButton);
-        console.log('VR button added');
-      } else {
-        document.body.insertBefore(vrButton, document.body.firstChild);
+      } catch(e) {
+        console.log('THREE.VRButton failed, using custom button');
+        vrButton = createVRButton(supported);
       }
     } else {
-      console.log('VR not supported on this device');
+      vrButton = createVRButton(supported);
+    }
+    
+    const vrContainer = document.getElementById('vr-button-container');
+    console.log('VR container found:', vrContainer);
+    if (vrContainer) {
+      vrContainer.appendChild(vrButton);
+      console.log('VR button added');
+    } else {
+      document.body.insertBefore(vrButton, document.body.firstChild);
     }
   }).catch((err) => {
     console.error('Error checking VR support:', err);
+    // Even if check fails, add a button
+    const vrButton = createVRButton(false);
+    const vrContainer = document.getElementById('vr-button-container');
+    if (vrContainer) {
+      vrContainer.appendChild(vrButton);
+    } else {
+      document.body.insertBefore(vrButton, document.body.firstChild);
+    }
   });
 } else {
   console.log('navigator.xr not available');
+  // No WebXR API, show informational button
+  const vrButton = createVRButton(false);
+  const vrContainer = document.getElementById('vr-button-container');
+  if (vrContainer) {
+    vrContainer.appendChild(vrButton);
+  } else {
+    document.body.insertBefore(vrButton, document.body.firstChild);
+  }
 }
 
 // Controller setup
