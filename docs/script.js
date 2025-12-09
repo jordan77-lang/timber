@@ -136,7 +136,22 @@ function setupController(index) {
   const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffff00 }));
   line.name = 'line';
   line.scale.z = 5;
+  line.visible = false; // Hide until we know if this input source is a controller
   controller.add(line);
+
+  controller.addEventListener('connected', (event) => {
+    controller.userData.inputSource = event.data;
+    if (line) {
+      line.visible = !event.data?.hand;
+    }
+  });
+
+  controller.addEventListener('disconnected', () => {
+    controller.userData.inputSource = null;
+    if (line) {
+      line.visible = false;
+    }
+  });
 
   return controller;
 }
@@ -1310,8 +1325,15 @@ function onMouseUp(event) {
   draggingHandle = false;
 }
 
+function isHandEvent(event) {
+  return Boolean(event && event.data && event.data.hand);
+}
+
 // --- VR INTERACTION HANDLERS ---
 function onVRSelectStart(event) {
+  if (isHandEvent(event)) {
+    return; // Hands use pinch-specific handlers
+  }
   const controller = event.target;
   const tempMatrix = new THREE.Matrix4();
   tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -1341,6 +1363,9 @@ function onVRSelectStart(event) {
 }
 
 function onVRSelectEnd(event) {
+  if (isHandEvent(event)) {
+    return;
+  }
   const controller = event.target;
   if (vrDraggedController === controller) {
     vrDraggedDot = null;
@@ -1493,10 +1518,20 @@ function getHandRay(hand) {
   
   const origin = new THREE.Vector3();
   indexTip.getWorldPosition(origin);
-  
-  const worldQuaternion = new THREE.Quaternion();
-  indexTip.getWorldQuaternion(worldQuaternion);
-  const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(worldQuaternion).normalize();
+  const direction = new THREE.Vector3();
+  const proximalJoint = hand.joints['index-finger-phalanx-intermediate'] ||
+                        hand.joints['index-finger-phalanx-proximal'] ||
+                        hand.joints['index-finger-metacarpal'];
+  if (proximalJoint) {
+    const proximalPos = new THREE.Vector3();
+    proximalJoint.getWorldPosition(proximalPos);
+    direction.copy(origin).sub(proximalPos).normalize();
+  }
+  if (!direction.lengthSq()) {
+    const worldQuaternion = new THREE.Quaternion();
+    indexTip.getWorldQuaternion(worldQuaternion);
+    direction.set(0, 0, -1).applyQuaternion(worldQuaternion).normalize();
+  }
   
   return { origin, direction, indexTip };
 }
@@ -1513,12 +1548,18 @@ function getBlockingObjects() {
 }
 
 function onVRSelect(event) {
+  if (isHandEvent(event)) {
+    return;
+  }
   if (vrDraggedDot) return; // Was dragging, don't place new dot
   
   const controller = event.target;
   
   // Check for UI button clicks first
-  handleVRUIClick(controller);
+  const clickedUI = handleVRUIClick(controller);
+  if (clickedUI) {
+    return;
+  }
   
   const tempMatrix = new THREE.Matrix4();
   tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -1549,6 +1590,10 @@ function onVRSelect(event) {
 }
 
 function handleVRControllerRaycast(controller, index) {
+  const inputSource = controller.userData ? controller.userData.inputSource : null;
+  if (inputSource && inputSource.hand) {
+    return; // Hand interactions handled separately
+  }
   // Handle rotation with controller
   if (vrDraggedHandle && vrDraggedController === controller) {
     const currentPos = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
@@ -1787,7 +1832,7 @@ function removeVRUI() {
 }
 
 function handleVRUIClick(controller) {
-  if (!vrUIPanel) return;
+  if (!vrUIPanel) return false;
   
   const tempMatrix = new THREE.Matrix4();
   tempMatrix.identity().extractRotation(controller.matrixWorld);
@@ -1817,7 +1862,10 @@ function handleVRUIClick(controller) {
       cubeGroup.rotation.y = Math.PI / 12;
       cubeGroup.rotation.z = 0;
     }
+    return true;
   }
+
+  return false;
 }
 
 function animate() {
