@@ -189,6 +189,20 @@ let loadedModel = null;
 let invisibleCube = null;
 let spectralFluxLabel = null;
 
+// Convert a cube-local point to normalized timbre parameters (0-1 range).
+function normalizeTimbreCoords(point) {
+  const halfSize = cubeSize / 2;
+  const normalizedX = (point.x + halfSize) / cubeSize;
+  const normalizedY = 1 - ((point.y + halfSize) / cubeSize);
+  const normalizedZ = (point.z + halfSize) / cubeSize;
+
+  return {
+    x: THREE.MathUtils.clamp(normalizedX, 0, 1),
+    y: THREE.MathUtils.clamp(normalizedY, 0, 1),
+    z: THREE.MathUtils.clamp(normalizedZ, 0, 1)
+  };
+}
+
 // Create an invisible cube that fills the entire volume for raycasting
 // Make it much larger to ensure we catch all areas
 const invisibleGeometry = new THREE.BoxGeometry(cubeSize * 1.5, cubeSize * 1.5, cubeSize * 1.5);
@@ -1036,17 +1050,9 @@ function addDotAtPoint(point) {
   shadowPlane.rotation.x = Math.PI / 2; // Rotate to be horizontal on the bottom
   cubeGroup.add(shadowPlane);
   
-  // Map 3D position to timbre parameters
-  // X-axis: Spectral Flux (-1 to 1 normalized to 0-1)
-  // Y-axis: Brightness (-1 to 1 normalized to 0-1)  
-  // Z-axis: Transients / noise ratio (-1 to 1 normalized to 0-1)
-  let x = (point.x + cubeSize/2) / cubeSize;
-  let y = (point.y + cubeSize/2) / cubeSize;
-  let z = (point.z + cubeSize/2) / cubeSize;
-  
-  x = Math.max(0, Math.min(1, x));
-  y = Math.max(0, Math.min(1, y));
-  z = Math.max(0, Math.min(1, z));
+  // Map 3D position to timbre parameters (brightness increases downward)
+  const normalized = normalizeTimbreCoords(point);
+  const { x, y, z } = normalized;
   
   // Create permanent crosshairs for this dot
   const crosshairs = createHoverLines(point, true);
@@ -1156,13 +1162,10 @@ function onMouseMove(event) {
     }
     
     // Update all 3D coordinates based on position in volume
-    draggedDot.x = (dragPoint.x + cubeSize/2) / cubeSize;
-    draggedDot.y = (dragPoint.y + cubeSize/2) / cubeSize;
-    draggedDot.z = (dragPoint.z + cubeSize/2) / cubeSize;
-    
-    draggedDot.x = Math.max(0, Math.min(1, draggedDot.x));
-    draggedDot.y = Math.max(0, Math.min(1, draggedDot.y));
-    draggedDot.z = Math.max(0, Math.min(1, draggedDot.z));
+    const draggedNormalized = normalizeTimbreCoords(dragPoint);
+    draggedDot.x = draggedNormalized.x;
+    draggedDot.y = draggedNormalized.y;
+    draggedDot.z = draggedNormalized.z;
     
     updateDotAudio(draggedDot);
     return; // Don't show hover lines while dragging (permanent crosshairs are shown)
@@ -1356,6 +1359,7 @@ function onHandPinchStart(event) {
   
   const raycaster = new THREE.Raycaster();
   raycaster.set(handRay.origin, handRay.direction);
+  const blockingObjects = getBlockingObjects();
   
   // Check for UI button clicks FIRST - highest priority
   if (vrUIPanel) {
@@ -1417,7 +1421,7 @@ function onHandPinchStart(event) {
   }
   
   // ONLY place new dot if pointing at the cube (matching mouse behavior)
-  const point = getIntersectionPointFromRay(raycaster);
+  const point = getIntersectionPointFromRay(raycaster, blockingObjects);
   if (point) {
     if (Tone.context.state !== 'running') {
       Tone.start();
@@ -1438,14 +1442,27 @@ function onHandPinchEnd(event) {
   }
 }
 
-function getIntersectionPointFromRay(raycaster) {
+function getIntersectionPointFromRay(raycaster, blockingObjects = []) {
   // Check if ray intersects the invisible cube at all
   const boxIntersects = raycaster.intersectObject(invisibleCube);
   if (boxIntersects.length === 0) return null;
   
   // Use the FIRST intersection point (entry point into cube volume)
-  // This allows placement anywhere inside the cube, not just on faces
-  const intersectPoint = boxIntersects[0].point;
+  const cubeHit = boxIntersects[0];
+  const intersectPoint = cubeHit.point;
+  const cubeDistance = cubeHit.distance;
+  
+  // If any blocking objects (UI panels, etc.) are closer than the cube, ignore this hit
+  if (blockingObjects.length > 0) {
+    const epsilon = 0.002;
+    for (const blocker of blockingObjects) {
+      if (!blocker) continue;
+      const blockerHits = raycaster.intersectObject(blocker, true);
+      if (blockerHits.length > 0 && blockerHits[0].distance < cubeDistance - epsilon) {
+        return null;
+      }
+    }
+  }
   
   // Transform to local cube coordinates
   const intersectLocal = intersectPoint.clone();
@@ -1482,6 +1499,17 @@ function getHandRay(hand) {
   const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(worldQuaternion).normalize();
   
   return { origin, direction, indexTip };
+}
+
+function getBlockingObjects() {
+  const blockers = [];
+  if (vrUIPanel) {
+    vrUIPanel.children.forEach(child => blockers.push(child));
+  }
+  if (vrSpectrographPlane) {
+    blockers.push(vrSpectrographPlane);
+  }
+  return blockers;
 }
 
 function onVRSelect(event) {
@@ -1576,13 +1604,10 @@ function handleVRControllerRaycast(controller, index) {
         cubeGroup.add(vrDraggedDot.crosshairs);
       }
       
-      vrDraggedDot.x = (localPoint.x + halfSize) / cubeSize;
-      vrDraggedDot.y = (localPoint.y + halfSize) / cubeSize;
-      vrDraggedDot.z = (localPoint.z + halfSize) / cubeSize;
-      
-      vrDraggedDot.x = Math.max(0, Math.min(1, vrDraggedDot.x));
-      vrDraggedDot.y = Math.max(0, Math.min(1, vrDraggedDot.y));
-      vrDraggedDot.z = Math.max(0, Math.min(1, vrDraggedDot.z));
+      const controllerNormalized = normalizeTimbreCoords(localPoint);
+      vrDraggedDot.x = controllerNormalized.x;
+      vrDraggedDot.y = controllerNormalized.y;
+      vrDraggedDot.z = controllerNormalized.z;
       
       updateDotAudio(vrDraggedDot);
     }
@@ -1877,7 +1902,7 @@ function animate() {
         if (handRay) {
           const raycaster = new THREE.Raycaster();
           raycaster.set(handRay.origin, handRay.direction);
-          const point = getIntersectionPointFromRay(raycaster);
+          const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
           
           // Determine which hover lines to update (left or right hand)
           const vrHoverLines = index === 0 ? vrHoverLinesLeft : vrHoverLinesRight;
@@ -1943,7 +1968,7 @@ function animate() {
     if (handRay) {
       const raycaster = new THREE.Raycaster();
       raycaster.set(handRay.origin, handRay.direction);
-      const point = getIntersectionPointFromRay(raycaster);
+      const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
       
       if (point) {
         const worldPoint = point.clone();
@@ -1959,14 +1984,10 @@ function animate() {
           cubeGroup.add(vrDraggedDot.crosshairs);
         }
         
-        const halfSize = cubeSize / 2;
-        vrDraggedDot.x = (point.x + halfSize) / cubeSize;
-        vrDraggedDot.y = (point.y + halfSize) / cubeSize;
-        vrDraggedDot.z = (point.z + halfSize) / cubeSize;
-        
-        vrDraggedDot.x = Math.max(0, Math.min(1, vrDraggedDot.x));
-        vrDraggedDot.y = Math.max(0, Math.min(1, vrDraggedDot.y));
-        vrDraggedDot.z = Math.max(0, Math.min(1, vrDraggedDot.z));
+        const handNormalized = normalizeTimbreCoords(point);
+        vrDraggedDot.x = handNormalized.x;
+        vrDraggedDot.y = handNormalized.y;
+        vrDraggedDot.z = handNormalized.z;
         
         updateDotAudio(vrDraggedDot);
       }
