@@ -203,6 +203,10 @@ let vrHoverLinesRight = null;
 let loadedModel = null;
 let invisibleCube = null;
 let spectralFluxLabel = null;
+const tempVecA = new THREE.Vector3();
+const tempVecB = new THREE.Vector3();
+const tempQuatA = new THREE.Quaternion();
+const NEG_Z = new THREE.Vector3(0, 0, -1);
 
 // Convert a cube-local point to normalized timbre parameters (0-1 range).
 function normalizeTimbreCoords(point) {
@@ -727,6 +731,21 @@ const reverb = new Tone.Reverb({
 });
 reverb.connect(mixBus);
 
+let audioReadyPromise = null;
+async function ensureAudioStarted() {
+  if (Tone.context.state === 'running') {
+    return;
+  }
+  if (!audioReadyPromise) {
+    audioReadyPromise = Tone.start()
+      .catch(err => {
+        console.error('Tone.js failed to start audio context:', err);
+        throw err;
+      });
+  }
+  await audioReadyPromise;
+}
+
 // Track playing dots
 const dots = [];
 let dotIdCounter = 0;
@@ -1011,7 +1030,7 @@ function getIntersectionPoint(raycaster) {
   return intersectLocal;
 }
 
-function onCanvasClick(event) {
+async function onCanvasClick(event) {
   // Don't create a new dot if we just finished dragging
   if (wasDragging) {
     wasDragging = false;
@@ -1019,10 +1038,6 @@ function onCanvasClick(event) {
     return;
   }
 
-  if (Tone.context.state !== 'running') {
-    Tone.start();
-  }
-  
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1031,6 +1046,7 @@ function onCanvasClick(event) {
   const point = getIntersectionPoint(raycaster);
 
   if (point) {
+    await ensureAudioStarted();
     addDotAtPoint(point);
   }
 }
@@ -1325,8 +1341,19 @@ function onMouseUp(event) {
   draggingHandle = false;
 }
 
+function getEventInputSource(event) {
+  if (!event) return null;
+  if (event.inputSource) return event.inputSource;
+  if (event.data) return event.data;
+  if (event.target && event.target.userData && event.target.userData.inputSource) {
+    return event.target.userData.inputSource;
+  }
+  return null;
+}
+
 function isHandEvent(event) {
-  return Boolean(event && event.data && event.data.hand);
+  const inputSource = getEventInputSource(event);
+  return Boolean(inputSource && inputSource.hand);
 }
 
 // --- VR INTERACTION HANDLERS ---
@@ -1377,7 +1404,7 @@ function onVRSelectEnd(event) {
   }
 }
 
-function onHandPinchStart(event) {
+async function onHandPinchStart(event) {
   const hand = event.target;
   const handRay = getHandRay(hand);
   if (!handRay) return;
@@ -1448,9 +1475,7 @@ function onHandPinchStart(event) {
   // ONLY place new dot if pointing at the cube (matching mouse behavior)
   const point = getIntersectionPointFromRay(raycaster, blockingObjects);
   if (point) {
-    if (Tone.context.state !== 'running') {
-      Tone.start();
-    }
+    await ensureAudioStarted();
     addDotAtPoint(point);
   }
   // If point is null (not pointing at cube), do nothing - just like mouse click
@@ -1547,7 +1572,7 @@ function getBlockingObjects() {
   return blockers;
 }
 
-function onVRSelect(event) {
+async function onVRSelect(event) {
   if (isHandEvent(event)) {
     return;
   }
@@ -1581,16 +1606,17 @@ function onVRSelect(event) {
     localPoint.y = Math.max(-halfSize, Math.min(halfSize, localPoint.y));
     localPoint.z = Math.max(-halfSize, Math.min(halfSize, localPoint.z));
     
-    if (Tone.context.state !== 'running') {
-      Tone.start();
-    }
-    
+    await ensureAudioStarted();
     addDotAtPoint(localPoint);
   }
 }
 
 function handleVRControllerRaycast(controller, index) {
   const inputSource = controller.userData ? controller.userData.inputSource : null;
+  const line = controller.getObjectByName('line');
+  if (line) {
+    line.visible = renderer.xr.isPresenting && !(inputSource && inputSource.hand);
+  }
   if (inputSource && inputSource.hand) {
     return; // Hand interactions handled separately
   }
@@ -1919,7 +1945,6 @@ function animate() {
         // Create/update pointer ray from index finger tip
         const indexTip = handRay ? handRay.indexTip : hand.joints['index-finger-tip'];
         if (indexTip) {
-          // Create ray if it doesn't exist
           if (!handModel.pointerRay) {
             const rayGeometry = new THREE.BufferGeometry().setFromPoints([
               new THREE.Vector3(0, 0, 0),
@@ -1932,15 +1957,29 @@ function animate() {
               opacity: 0.6
             }));
             rayLine.scale.z = 5;
-            hand.add(rayLine);
+            rayLine.renderOrder = 10;
+            scene.add(rayLine);
             handModel.pointerRay = rayLine;
           }
-          
-          // Update ray position and direction
-          handModel.pointerRay.position.copy(indexTip.position);
-          handModel.pointerRay.quaternion.copy(indexTip.quaternion);
-          handModel.pointerRay.rotateX(-Math.PI / 2);
-          handModel.pointerRay.visible = renderer.xr.isPresenting && !vrDraggedDot && !vrDraggedHandle;
+
+          const pointerRay = handModel.pointerRay;
+          const rayOrigin = tempVecA;
+          const rayDirection = tempVecB;
+
+          if (handRay) {
+            rayOrigin.copy(handRay.origin);
+            rayDirection.copy(handRay.direction);
+          } else {
+            indexTip.getWorldPosition(rayOrigin);
+            rayDirection.set(0, 0, -1).applyQuaternion(indexTip.quaternion).normalize();
+          }
+
+          pointerRay.position.copy(rayOrigin);
+          tempQuatA.setFromUnitVectors(NEG_Z, rayDirection);
+          pointerRay.quaternion.copy(tempQuatA);
+          pointerRay.visible = renderer.xr.isPresenting && !vrDraggedDot && !vrDraggedHandle;
+        } else if (handModel.pointerRay) {
+          handModel.pointerRay.visible = false;
         }
       }
       
