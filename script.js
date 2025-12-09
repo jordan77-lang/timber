@@ -1384,6 +1384,32 @@ function onHandPinchStart(event) {
   
   raycaster.set(tipPosition, direction);
   
+  // Check for UI button clicks first
+  if (vrUIPanel) {
+    const buttons = vrUIPanel.children;
+    const uiIntersects = raycaster.intersectObjects(buttons);
+    if (uiIntersects.length > 0) {
+      const button = uiIntersects[0].object;
+      const action = button.userData.buttonAction;
+      
+      if (action === 'download') {
+        const link = document.createElement('a');
+        link.download = 'spectrograph.png';
+        link.href = spectroCanvas.toDataURL();
+        link.click();
+      } else if (action === 'clear') {
+        while (dots.length > 0) {
+          destroyDot(dots[0]);
+        }
+      } else if (action === 'reset') {
+        cubeGroup.rotation.x = 0;
+        cubeGroup.rotation.y = Math.PI / 12;
+        cubeGroup.rotation.z = 0;
+      }
+      return;
+    }
+  }
+  
   // Check for handle grab first
   const handleIntersects = raycaster.intersectObjects(handleBalls);
   if (handleIntersects.length > 0) {
@@ -1846,6 +1872,34 @@ function animate() {
         
         updateDotAudio(vrDraggedDot);
       }
+    }
+  }
+  
+  // Update VR UI and spectrograph positions to follow camera
+  if (renderer.xr.isPresenting && vrSpectrographPlane) {
+    const camera = renderer.xr.getCamera();
+    
+    // Get camera direction
+    const cameraDirection = new THREE.Vector3();
+    camera.getWorldDirection(cameraDirection);
+    
+    // Position spectrograph behind the cube from camera's perspective
+    const distanceBehindCube = 3.5;
+    const spectroPos = cubeGroup.position.clone();
+    spectroPos.add(cameraDirection.multiplyScalar(-distanceBehindCube));
+    vrSpectrographPlane.position.copy(spectroPos);
+    vrSpectrographPlane.lookAt(camera.position);
+    
+    // Keep UI panel in a fixed position relative to cube
+    if (vrUIPanel) {
+      const uiPos = cubeGroup.position.clone();
+      const rightOffset = new THREE.Vector3();
+      camera.getWorldDirection(rightOffset);
+      rightOffset.cross(camera.up).normalize().multiplyScalar(-2);
+      const upOffset = camera.up.clone().normalize().multiplyScalar(1.5);
+      uiPos.add(rightOffset).add(upOffset);
+      vrUIPanel.position.copy(uiPos);
+      vrUIPanel.lookAt(camera.position);
     }
   }
   
