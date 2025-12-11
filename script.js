@@ -482,7 +482,7 @@ function createAxisLabels() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw text vertically (one letter per line)
-    ctx.font = 'bold 65px Arial';
+    ctx.font = 'bold 70px Arial';
     ctx.fillStyle = '#00ff88';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -494,7 +494,7 @@ function createAxisLabels() {
     
     // Calculate spacing for vertical text
     const letters = text.split('');
-    const letterSpacing = 75;
+    const letterSpacing = 100;
     const totalHeight = letters.length * letterSpacing;
     const startY = (canvas.height - totalHeight) / 2 + letterSpacing / 2;
     
