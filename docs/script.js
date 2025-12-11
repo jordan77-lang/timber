@@ -1554,40 +1554,6 @@ function createFaceLabels() {
 
 createFaceLabels();
 
-// --- TONE.JS SETUP ---
-const mixBus = new Tone.Gain(1);
-const analyser = Tone.context.createAnalyser();
-analyser.fftSize = 512;
-analyser.smoothingTimeConstant = 0.6;
-mixBus.connect(analyser);
-mixBus.connect(Tone.Destination);
-
-const masterBus = new Tone.Gain(0.75);
-masterBus.connect(mixBus);
-
-const reverb = new Tone.Reverb({
-  decay: 2.8,
-  preDelay: 0.03,
-  wet: 1
-});
-reverb.connect(mixBus);
-
-let audioReadyPromise = null;
-async function ensureAudioStarted() {
-  if (Tone.context.state === 'running') {
-    return;
-  }
-  if (!audioReadyPromise) {
-    audioReadyPromise = Tone.start()
-      .catch(err => {
-        console.error('Tone.js failed to start audio context:', err);
-        throw err;
-      });
-  }
-  await audioReadyPromise;
-}
-
-// Track playing dots
 const dots = [];
 let dotIdCounter = 0;
 
