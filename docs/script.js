@@ -1,4 +1,4 @@
-﻿// --- THREE.JS SETUP ---
+// --- THREE.JS SETUP ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
@@ -260,9 +260,9 @@ loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
   cubeGroup.add(loadedModel);
   
   // Create the three visible walls
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness Ã— Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux Ã— Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux Ã— Brightness', new THREE.Vector3(0, 0, -1));
+  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
+  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
+  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
 }, undefined, function(error) {
   console.error('Error loading GLB model:', error);
   // Fallback to creating plane faces if model fails to load
@@ -270,9 +270,9 @@ loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
 });
 
 function createFallbackCube() {
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness Ã— Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux Ã— Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux Ã— Brightness', new THREE.Vector3(0, 0, -1));
+  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
+  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
+  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
 }
 
 function createFace(position, rotation, color, label, normalVector) {
@@ -533,8 +533,8 @@ function createAxisLabels() {
   // Left edge - Brightness label removed
   
   // Left plane - Brightness label with two versions (front and back view)
-  // Front view label: "Brightnessâ†“"
-  const brightnessLabelFront = createVerticalLabelCanvas('Brightnessâ†“');
+  // Front view label: "Brightness↓"
+  const brightnessLabelFront = createVerticalLabelCanvas('Brightness↓');
   const brightnessTextureFront = new THREE.CanvasTexture(brightnessLabelFront);
   brightnessTextureFront.needsUpdate = true;
   const brightnessMaterialFront = new THREE.MeshBasicMaterial({
@@ -552,8 +552,8 @@ function createAxisLabels() {
   brightnessMeshFront.renderOrder = 999;
   cubeGroup.add(brightnessMeshFront);
   
-  // Back view label: "Brightnessâ†“" (arrow pointing down from back view)
-  const brightnessLabelBack = createVerticalLabelCanvas('Brightnessâ†“');
+  // Back view label: "Brightness↓" (arrow pointing down from back view)
+  const brightnessLabelBack = createVerticalLabelCanvas('Brightness↓');
   const brightnessTextureBack = new THREE.CanvasTexture(brightnessLabelBack);
   brightnessTextureBack.needsUpdate = true;
   const brightnessMaterialBack = new THREE.MeshBasicMaterial({
@@ -572,8 +572,8 @@ function createAxisLabels() {
   cubeGroup.add(brightnessMeshBack);
   
   // Bottom plane - Transients Density label with two versions (top and bottom view)
-  // Top view label: "Transients Density â†’"
-  const transientsLabelTop = createLargeLabelCanvas('Transients Density â†’');
+  // Top view label: "Transients Density →"
+  const transientsLabelTop = createLargeLabelCanvas('Transients Density →');
   const transientsTextureTop = new THREE.CanvasTexture(transientsLabelTop);
   transientsTextureTop.needsUpdate = true;
   const transientsMaterialTop = new THREE.MeshBasicMaterial({ 
@@ -592,8 +592,8 @@ function createAxisLabels() {
   transientsMeshTop.renderOrder = 999;
   cubeGroup.add(transientsMeshTop);
   
-  // Bottom view label: "â† Transients Density" (arrow before text for bottom view)
-  const transientsLabelBottom = createLargeLabelCanvas('â† Transients Density');
+  // Bottom view label: "← Transients Density" (arrow before text for bottom view)
+  const transientsLabelBottom = createLargeLabelCanvas('← Transients Density');
   const transientsTextureBottom = new THREE.CanvasTexture(transientsLabelBottom);
   transientsTextureBottom.needsUpdate = true;
   const transientsMaterialBottom = new THREE.MeshBasicMaterial({ 
@@ -667,9 +667,9 @@ function createFaceLabels() {
   
   // Left/Brightness face - Label removed (now using vertical axis labels)
   
-  // Back/Transients face - "Spectral Flux" with two labels (front and back)
-  // Front-facing label: "Spectral Flux â†’"
-  const backLabelFront = createLargeLabelCanvas('Spectral Flux â†’');
+  // Back/Transients face - "Inharmonicity" with two labels (front and back)
+  // Front-facing label: "Inharmonicity"
+  const backLabelFront = createLargeLabelCanvas('Inharmonicity');
   const backTextureFront = new THREE.CanvasTexture(backLabelFront);
   backTextureFront.needsUpdate = true;
   const backMaterialFront = new THREE.MeshBasicMaterial({ 
@@ -689,8 +689,8 @@ function createFaceLabels() {
   spectralFluxLabel = backMeshFront;
   cubeGroup.add(backMeshFront);
   
-  // Back-facing label: "â† Spectral Flux" (arrow before text pointing left from back view)
-  const backLabelBack = createLargeLabelCanvas('â† Spectral Flux');
+  // Back-facing label: "Inharmonicity"
+  const backLabelBack = createLargeLabelCanvas('Inharmonicity');
   const backTextureBack = new THREE.CanvasTexture(backLabelBack);
   backTextureBack.needsUpdate = true;
   const backMaterialBack = new THREE.MeshBasicMaterial({ 
@@ -1285,665 +1285,6 @@ function normalizeTimbreCoords(point) {
 }
 
 // --- AXIS LABELS ---
-function createAxisLabels() {
-  // Function to create a glowing text canvas
-  function createLabelCanvas(text, arrow = '') {
-    const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = 512;
-    labelCanvas.height = 128;
-    const labelCtx = labelCanvas.getContext('2d');
-    
-    // Clear with transparent background
-    labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
-    
-    // Draw glowing text
-    labelCtx.font = 'bold 48px Arial';
-    labelCtx.fillStyle = '#00ff88';
-    labelCtx.textAlign = 'left';
-    labelCtx.textBaseline = 'middle';
-    
-    // Glow effect
-    labelCtx.shadowColor = '#00ff88';
-    labelCtx.shadowBlur = 20;
-    labelCtx.shadowOffsetX = 0;
-    labelCtx.shadowOffsetY = 0;
-    
-    labelCtx.fillText(text + ' ' + arrow, 20, 64);
-    
-    return labelCanvas;
-  }
-  
-  // Function to create vertical label canvas
-  function createVerticalLabelCanvas(text) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 1024;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw text vertically (one letter per line)
-    ctx.font = 'bold 80px Arial';
-    ctx.fillStyle = '#00ff88';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    ctx.shadowColor = '#00ff88';
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    
-    // Calculate spacing for vertical text
-    const letters = text.split('');
-    const totalHeight = letters.length * 90;
-    const startY = (canvas.height - totalHeight) / 2 + 45;
-    
-    letters.forEach((letter, i) => {
-      ctx.fillText(letter, canvas.width / 2, startY + i * 90);
-    });
-    
-    return canvas;
-  }
-  
-  // Function to create large label canvas for plane labels
-  function createLargeLabelCanvas(text) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    ctx.font = 'bold 80px Arial';
-    ctx.fillStyle = '#00ff88';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    
-    ctx.shadowColor = '#00ff88';
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetX = 0;
-    ctx.shadowOffsetY = 0;
-    
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-    
-    return canvas;
-  }
-  
-  // Bottom edge - Spectral Flux label removed
-  
-  // Left edge - Brightness label removed
-  
-  // Left plane - Brightness label with two versions (front and back view)
-  // Front view label: "Brightnessâ†“"
-  const brightnessLabelFront = createVerticalLabelCanvas('Brightnessâ†“');
-  const brightnessTextureFront = new THREE.CanvasTexture(brightnessLabelFront);
-  brightnessTextureFront.needsUpdate = true;
-  const brightnessMaterialFront = new THREE.MeshBasicMaterial({
-    map: brightnessTextureFront,
-    transparent: true,
-    alphaTest: 0.1,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.FrontSide
-  });
-  const brightnessGeomFront = new THREE.PlaneGeometry(0.7, 3.2);
-  const brightnessMeshFront = new THREE.Mesh(brightnessGeomFront, brightnessMaterialFront);
-  brightnessMeshFront.position.set(-cubeSize/2 + 0.1, 0, cubeSize/2 - 0.15);
-  brightnessMeshFront.rotation.y = Math.PI / 2;
-  brightnessMeshFront.renderOrder = 999;
-  cubeGroup.add(brightnessMeshFront);
-  
-  // Back view label: "Brightnessâ†“" (arrow pointing down from back view)
-  const brightnessLabelBack = createVerticalLabelCanvas('Brightnessâ†“');
-  const brightnessTextureBack = new THREE.CanvasTexture(brightnessLabelBack);
-  brightnessTextureBack.needsUpdate = true;
-  const brightnessMaterialBack = new THREE.MeshBasicMaterial({
-    map: brightnessTextureBack,
-    transparent: true,
-    alphaTest: 0.1,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.FrontSide
-  });
-  const brightnessGeomBack = new THREE.PlaneGeometry(0.7, 3.2);
-  const brightnessMeshBack = new THREE.Mesh(brightnessGeomBack, brightnessMaterialBack);
-  brightnessMeshBack.position.set(-cubeSize/2 + 0.1, 0, cubeSize/2 - 0.15);
-  brightnessMeshBack.rotation.y = -Math.PI / 2; // Face opposite direction
-  brightnessMeshBack.renderOrder = 999;
-  cubeGroup.add(brightnessMeshBack);
-  
-  // Bottom plane - Transients Density label with two versions (top and bottom view)
-  // Top view label: "Transients Density â†’"
-  const transientsLabelTop = createLargeLabelCanvas('Transients Density â†’');
-  const transientsTextureTop = new THREE.CanvasTexture(transientsLabelTop);
-  transientsTextureTop.needsUpdate = true;
-  const transientsMaterialTop = new THREE.MeshBasicMaterial({ 
-    map: transientsTextureTop, 
-    transparent: true,
-    alphaTest: 0.1,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.FrontSide
-  });
-  const transientsGeomTop = new THREE.PlaneGeometry(3.2, 0.7);
-  const transientsMeshTop = new THREE.Mesh(transientsGeomTop, transientsMaterialTop);
-  transientsMeshTop.position.set(cubeSize/2 - 0.3, -cubeSize/2 + 0.1, 0);
-  transientsMeshTop.rotation.x = -Math.PI / 2;
-  transientsMeshTop.rotation.z = Math.PI / 2;
-  transientsMeshTop.renderOrder = 999;
-  cubeGroup.add(transientsMeshTop);
-  
-  // Bottom view label: "â† Transients Density" (arrow before text for bottom view)
-  const transientsLabelBottom = createLargeLabelCanvas('â† Transients Density');
-  const transientsTextureBottom = new THREE.CanvasTexture(transientsLabelBottom);
-  transientsTextureBottom.needsUpdate = true;
-  const transientsMaterialBottom = new THREE.MeshBasicMaterial({ 
-    map: transientsTextureBottom, 
-    transparent: true,
-    alphaTest: 0.1,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.FrontSide
-  });
-  const transientsGeomBottom = new THREE.PlaneGeometry(3.2, 0.7);
-  const transientsMeshBottom = new THREE.Mesh(transientsGeomBottom, transientsMaterialBottom);
-  transientsMeshBottom.position.set(cubeSize/2 - 0.3, -cubeSize/2 + 0.1, 0);
-  transientsMeshBottom.rotation.x = Math.PI / 2; // Flip to face downward
-  transientsMeshBottom.rotation.z = Math.PI / 2;
-  transientsMeshBottom.renderOrder = 999;
-  cubeGroup.add(transientsMeshBottom);
-  
-  // Axis labels removed to clean up view
-}
-
-createAxisLabels();
-
-// --- FACE LABELS (on inside surfaces) ---
-function createFaceLabels() {
-  function createLargeLabelCanvas(text) {
-    const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = 4096;
-    labelCanvas.height = 1024;
-    const labelCtx = labelCanvas.getContext('2d');
-    
-    labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
-    labelCtx.font = 'bold 400px Arial';
-    labelCtx.fillStyle = '#00ff88';
-    labelCtx.textAlign = 'center';
-    labelCtx.textBaseline = 'middle';
-    
-    labelCtx.shadowColor = '#00ff88';
-    labelCtx.shadowBlur = 60;
-    labelCtx.shadowOffsetX = 0;
-    labelCtx.shadowOffsetY = 0;
-    
-    labelCtx.fillText(text, 2048, 512);
-    
-    return labelCanvas;
-  }
-  
-  function createVerticalLabelCanvas(text) {
-    const labelCanvas = document.createElement('canvas');
-    labelCanvas.width = 1024;
-    labelCanvas.height = 4096;
-    const labelCtx = labelCanvas.getContext('2d');
-    
-    labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
-    labelCtx.font = 'bold 400px Arial';
-    labelCtx.fillStyle = '#00ff88';
-    labelCtx.textAlign = 'center';
-    labelCtx.textBaseline = 'middle';
-    
-    labelCtx.shadowColor = '#00ff88';
-    labelCtx.shadowBlur = 60;
-    labelCtx.shadowOffsetX = 0;
-    labelCtx.shadowOffsetY = 0;
-    
-    labelCtx.fillText(text, 512, 2048);
-    
-    return labelCanvas;
-  }
-  
-  // Bottom/Front face - removed label
-  
-  // Left/Brightness face - Label removed (now using vertical axis labels)
-  
-  // Back/Transients face - "Spectral Flux" with two labels (front and back)
-  // Front-facing label: "Spectral Flux â†’"
-  const backLabelFront = createLargeLabelCanvas('Spectral Flux â†’');
-  const backTextureFront = new THREE.CanvasTexture(backLabelFront);
-  backTextureFront.needsUpdate = true;
-  const backMaterialFront = new THREE.MeshBasicMaterial({ 
-    map: backTextureFront, 
-    transparent: true,
-    alphaTest: 0.1,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.FrontSide
-  });
-  const backGeomFront = new THREE.PlaneGeometry(3.2, 0.7);
-  const backMeshFront = new THREE.Mesh(backGeomFront, backMaterialFront);
-  backMeshFront.position.set(0, cubeSize/2 - 0.3, -cubeSize/2 + 0.1);
-  backMeshFront.renderOrder = 999;
-  backMeshFront.userData.isSpectralFluxLabel = true;
-  backMeshFront.userData.isFrontLabel = true;
-  spectralFluxLabel = backMeshFront;
-  cubeGroup.add(backMeshFront);
-  
-  // Back-facing label: "â† Spectral Flux" (arrow before text pointing left from back view)
-  const backLabelBack = createLargeLabelCanvas('â† Spectral Flux');
-  const backTextureBack = new THREE.CanvasTexture(backLabelBack);
-  backTextureBack.needsUpdate = true;
-  const backMaterialBack = new THREE.MeshBasicMaterial({ 
-    map: backTextureBack, 
-    transparent: true,
-    alphaTest: 0.1,
-    depthWrite: false,
-    depthTest: false,
-    side: THREE.FrontSide
-  });
-  const backGeomBack = new THREE.PlaneGeometry(3.2, 0.7);
-  const backMeshBack = new THREE.Mesh(backGeomBack, backMaterialBack);
-  backMeshBack.position.set(0, cubeSize/2 - 0.3, -cubeSize/2 + 0.1);
-  backMeshBack.rotation.y = Math.PI; // Rotate 180 to face opposite direction
-  backMeshBack.renderOrder = 999;
-  backMeshBack.userData.isSpectralFluxLabel = true;
-  backMeshBack.userData.isBackLabel = true;
-  cubeGroup.add(backMeshBack);
-}
-
-createFaceLabels();
-
-// --- RAYCASTER FOR INTERACTION ---
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-let draggedDot = null;
-let draggedDotOutsideBounds = false; // Track if dragged dot went outside bounds
-let wasDragging = false; // Track if we just finished dragging to prevent new dot creation
-let draggingHandle = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
-const dragPlane = new THREE.Plane();
-const dragPoint = new THREE.Vector3();
-
-function getIntersectionPoint(raycaster) {
-  // First check if mouse is over the cube at all
-  const boxIntersects = raycaster.intersectObject(invisibleCube);
-  
-  if (boxIntersects.length === 0) {
-    return null; // Not pointing at cube - hide crosshairs
-  }
-  
-  // Create a plane perpendicular to the camera view that goes through a point in the cube
-  // The depth is determined by the mouse's vertical position on screen
-  // This allows us to "scan" through the cube's depth by moving the mouse up/down
-  
-  const cameraDir = new THREE.Vector3();
-  camera.getWorldDirection(cameraDir);
-  
-  // Map mouse Y position (-1 to 1) to depth in cube (-cubeSize/2 to cubeSize/2)
-  // More intuitive: mouse at top of cube = far side, mouse at bottom = near side
-  const depthT = (mouse.y + 1) / 2; // Convert -1,1 to 0,1
-  const depthInCube = -cubeSize/2 + depthT * cubeSize; // Map to cube depth
-  
-  // Create a point at this depth along the camera's view direction
-  const cubeCenter = new THREE.Vector3(0, 0, 0);
-  const depthPoint = cubeCenter.clone().addScaledVector(cameraDir, depthInCube * 0.5);
-  
-  // Create plane through this depth point, perpendicular to camera
-  const planeNormal = cameraDir.clone().negate();
-  const plane = new THREE.Plane();
-  plane.setFromNormalAndCoplanarPoint(planeNormal, depthPoint);
-  
-  // Intersect ray with this plane
-  const planeIntersect = new THREE.Vector3();
-  const hasPlaneIntersect = raycaster.ray.intersectPlane(plane, planeIntersect);
-  
-  if (!hasPlaneIntersect) {
-    return null;
-  }
-  
-  // Transform to local coordinates
-  const intersectLocal = planeIntersect.clone();
-  intersectLocal.sub(cubeGroup.position);
-  intersectLocal.applyQuaternion(cubeGroup.quaternion.clone().invert());
-  
-  // Clamp to cube bounds
-  const halfSize = cubeSize / 2;
-  intersectLocal.x = Math.max(-halfSize, Math.min(halfSize, intersectLocal.x));
-  intersectLocal.y = Math.max(-halfSize, Math.min(halfSize, intersectLocal.y));
-  intersectLocal.z = Math.max(-halfSize, Math.min(halfSize, intersectLocal.z));
-  
-  return intersectLocal;
-}
-
-async function onCanvasClick(event) {
-  // Don't create a new dot if we just finished dragging
-  if (wasDragging) {
-    wasDragging = false;
-    event.preventDefault();
-    return;
-  }
-
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-  const point = getIntersectionPoint(raycaster);
-
-  if (point) {
-    await ensureAudioStarted();
-    addDotAtPoint(point);
-  }
-}
-
-function addDotAtPoint(point) {
-  // Create a small cube instead of sphere
-  const dotGeometry = new THREE.BoxGeometry(0.225, 0.225, 0.225);
-  const dotMaterial = new THREE.MeshPhysicalMaterial({ 
-    color: 0xff0088,
-    emissive: 0xff0088,
-    emissiveIntensity: 0.5,
-    metalness: 0.8,
-    roughness: 0.2,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.1
-  });
-  const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
-  dotMesh.position.copy(point);
-  dotMesh.castShadow = true;
-  dotMesh.receiveShadow = true;
-  dotMesh.renderOrder = 0; // Render cubes first
-  cubeGroup.add(dotMesh);
-  
-  // Create a shadow plane that projects straight down to the bottom wall
-  const shadowGeometry = new THREE.PlaneGeometry(0.2, 0.2);
-  const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0.4 });
-  const shadowPlane = new THREE.Mesh(shadowGeometry, shadowMaterial);
-  shadowPlane.receiveShadow = true;
-  
-  // Position shadow directly below the dot on the bottom wall (Y = -cubeSize/2)
-  shadowPlane.position.set(point.x, -cubeSize/2, point.z);
-  shadowPlane.rotation.x = Math.PI / 2; // Rotate to be horizontal on the bottom
-  cubeGroup.add(shadowPlane);
-  
-  // Map 3D position to timbre parameters (brightness increases downward)
-  const normalized = normalizeTimbreCoords(point);
-  const { x, y, z } = normalized;
-  
-  // Create permanent crosshairs for this dot
-  const crosshairs = createHoverLines(point, true);
-  cubeGroup.add(crosshairs);
-  
-  const dotId = dotIdCounter++;
-  const dot = { mesh: dotMesh, shadow: shadowPlane, crosshairs: crosshairs, x, y, z, id: dotId };
-  
-  dots.push(dot);
-  createDotVoice(dot);
-  updateDotAudio(dot);
-  if (dot.voice) {
-    dot.voice.ampEnv.triggerAttack();
-  }
-}
-
-function onMouseDown(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  
-  lastMouseX = event.clientX;
-  lastMouseY = event.clientY;
-
-  raycaster.setFromCamera(mouse, camera);
-  
-  // Check if any handle was clicked
-  const handleIntersects = raycaster.intersectObjects(handleBalls);
-  if (handleIntersects.length > 0) {
-    draggingHandle = true;
-    event.preventDefault();
-    return;
-  }
-  
-  const dotMeshes = dots.map(d => d.mesh);
-  const intersects = raycaster.intersectObjects(dotMeshes);
-  
-  if (intersects.length > 0) {
-    const clickedMesh = intersects[0].object;
-    draggedDot = dots.find(d => d.mesh === clickedMesh);
-    
-    if (draggedDot) {
-      wasDragging = false; // Reset flag at start of potential drag
-      dragPlane.setFromNormalAndCoplanarPoint(
-        camera.getWorldDirection(new THREE.Vector3()),
-        draggedDot.mesh.position
-      );
-      event.preventDefault();
-    }
-  }
-}
-
-function onMouseMove(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-  // Handle cube rotation ONLY if dragging the handle AND mouse button is pressed
-  if (draggingHandle && (event.buttons & 1)) { // Check if left mouse button is pressed
-    wasDragging = true; // Mark that we're dragging the handle
-    const deltaX = event.clientX - lastMouseX;
-    const deltaY = event.clientY - lastMouseY;
-    cubeGroup.rotation.y += deltaX * 0.005;
-    cubeGroup.rotation.x += deltaY * 0.005;
-    lastMouseX = event.clientX;
-    lastMouseY = event.clientY;
-  } else if (draggingHandle && !(event.buttons & 1)) {
-    // Stop dragging if button is released
-    draggingHandle = false;
-    return;
-  }
-  
-  if (draggingHandle) return;
-
-  if (draggedDot) {
-    wasDragging = true; // Mark that we're in a drag operation
-    raycaster.setFromCamera(mouse, camera);
-    raycaster.ray.intersectPlane(dragPlane, dragPoint);
-    
-    // Check if the dot is being dragged outside the cube bounds
-    draggedDotOutsideBounds = dragPoint.x < -cubeSize/2 || dragPoint.x > cubeSize/2 ||
-                              dragPoint.y < -cubeSize/2 || dragPoint.y > cubeSize/2 ||
-                              dragPoint.z < -cubeSize/2 || dragPoint.z > cubeSize/2;
-    
-    // If outside bounds, show visual indicator but don't move or destroy yet
-    if (draggedDotOutsideBounds) {
-      draggedDot.mesh.visible = false; // Hide the dot while outside
-      return; // Wait for mouse up to destroy
-    }
-    
-    // Only move if within bounds
-    dragPoint.x = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.x));
-    dragPoint.y = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.y));
-    dragPoint.z = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.z));
-    
-    draggedDot.mesh.visible = true; // Show the dot again if it comes back
-    draggedDot.mesh.position.copy(dragPoint);
-    
-    // Update shadow position to follow the dot
-    draggedDot.shadow.position.set(dragPoint.x, -cubeSize/2, dragPoint.z);
-    
-    // Update crosshairs position to follow the dot
-    if (draggedDot.crosshairs) {
-      cubeGroup.remove(draggedDot.crosshairs);
-      draggedDot.crosshairs = createHoverLines(dragPoint, true);
-      cubeGroup.add(draggedDot.crosshairs);
-    }
-    
-    // Update all 3D coordinates based on position in volume
-    const draggedNormalized = normalizeTimbreCoords(dragPoint);
-    draggedDot.x = draggedNormalized.x;
-    draggedDot.y = draggedNormalized.y;
-    draggedDot.z = draggedNormalized.z;
-    
-    updateDotAudio(draggedDot);
-    return; // Don't show hover lines while dragging (permanent crosshairs are shown)
-  }
-  
-  raycaster.setFromCamera(mouse, camera);
-  const intersectPoint = getIntersectionPoint(raycaster);
-  
-  // Update hover visualization
-  if (hoverLines) {
-    cubeGroup.remove(hoverLines);
-    hoverLines = null;
-  }
-  
-  if (intersectPoint) {
-    hoverLines = createHoverLines(intersectPoint);
-    cubeGroup.add(hoverLines);
-  }
-}
-
-function createHoverLines(point, isPermanent = false) {
-  const group = new THREE.Group();
-  const lineColor = 0xffff00;
-  const opacity = isPermanent ? 0.4 : 0.8; // More transparent for permanent crosshairs
-  const extension = 0.05; // Extend lines slightly past walls
-  const cubeHalfSize = 0.225 / 2; // Half the size of placed cubes (0.1125)
-  
-  // Create three simple lines from dot to each wall
-  // Line to left wall (X = -cubeSize/2)
-  const toLeftWall = new THREE.BufferGeometry();
-  toLeftWall.setAttribute('position', new THREE.BufferAttribute(
-    new Float32Array([
-      point.x, point.y, point.z,
-      -cubeSize/2 - extension, point.y, point.z
-    ]), 3
-  ));
-  const leftWallLine = new THREE.Line(toLeftWall, new THREE.LineBasicMaterial({ 
-    color: lineColor, 
-    linewidth: 2,
-    depthTest: false,
-    transparent: true,
-    opacity: opacity
-  }));
-  leftWallLine.renderOrder = 1; // Render lines after cubes
-  group.add(leftWallLine);
-  
-  // Line to bottom wall (Y = -cubeSize/2)
-  const toBottomWall = new THREE.BufferGeometry();
-  toBottomWall.setAttribute('position', new THREE.BufferAttribute(
-    new Float32Array([
-      point.x, point.y, point.z,
-      point.x, -cubeSize/2 - extension, point.z
-    ]), 3
-  ));
-  const bottomWallLine = new THREE.Line(toBottomWall, new THREE.LineBasicMaterial({ 
-    color: lineColor, 
-    linewidth: 2,
-    depthTest: false,
-    transparent: true,
-    opacity: opacity
-  }));
-  bottomWallLine.renderOrder = 1; // Render lines after cubes
-  group.add(bottomWallLine);
-  
-  // Line to back wall (Z = -cubeSize/2)
-  const toBackWall = new THREE.BufferGeometry();
-  toBackWall.setAttribute('position', new THREE.BufferAttribute(
-    new Float32Array([
-      point.x, point.y, point.z,
-      point.x, point.y, -cubeSize/2 - extension
-    ]), 3
-  ));
-  const backWallLine = new THREE.Line(toBackWall, new THREE.LineBasicMaterial({ 
-    color: lineColor, 
-    linewidth: 2,
-    depthTest: false,
-    transparent: true,
-    opacity: opacity
-  }));
-  backWallLine.renderOrder = 1; // Render lines after cubes
-  group.add(backWallLine);
-  
-  // Mark as permanent and add pulse orbs for animation
-  if (isPermanent) {
-    group.userData.isPermanent = true;
-    group.userData.basePosition = point.clone();
-    
-    // Create three elongated glowing orbs for pulse animation (thinner and longer)
-    for (let i = 0; i < 3; i++) {
-      let pulseGeometry;
-      // Create elongated sphere based on axis direction
-      if (i === 0) { // X axis - elongated horizontally
-        pulseGeometry = new THREE.SphereGeometry(0.01, 8, 8);
-        pulseGeometry.scale(10, 1, 1); // Stretch along X
-      } else if (i === 1) { // Y axis - elongated vertically
-        pulseGeometry = new THREE.SphereGeometry(0.01, 8, 8);
-        pulseGeometry.scale(1, 10, 1); // Stretch along Y
-      } else { // Z axis - elongated in Z
-        pulseGeometry = new THREE.SphereGeometry(0.01, 8, 8);
-        pulseGeometry.scale(1, 1, 10); // Stretch along Z
-      }
-      
-      const pulseMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xffff00,
-        transparent: true,
-        opacity: 0.6
-      });
-      
-      const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
-      pulse.position.copy(point);
-      pulse.userData.isPulse = true;
-      pulse.userData.axis = i; // 0=X, 1=Y, 2=Z
-      group.add(pulse);
-      
-      // Create a ripple ring for impact effect
-      const ringGeometry = new THREE.RingGeometry(0.025, 0.04, 16);
-      const ringMaterial = new THREE.MeshBasicMaterial({
-        color: 0xffff00,
-        transparent: true,
-        opacity: 0,
-        side: THREE.DoubleSide
-      });
-      const ripple = new THREE.Mesh(ringGeometry, ringMaterial);
-      ripple.userData.isRipple = true;
-      ripple.userData.axis = i;
-      ripple.userData.scale = 0;
-      group.add(ripple);
-    }
-  }
-  
-  return group;
-}
-
-function onMouseUp(event) {
-  // If the dragged dot was outside bounds when released, destroy it
-  if (draggedDot && draggedDotOutsideBounds) {
-    destroyDot(draggedDot);
-  }
-  
-  draggedDot = null;
-  draggedDotOutsideBounds = false;
-  draggingHandle = false;
-}
-
-function getEventInputSource(event) {
-  if (!event) return null;
-  if (event.inputSource) return event.inputSource;
-  if (event.data) return event.data;
-  if (event.target && event.target.userData && event.target.userData.inputSource) {
-    return event.target.userData.inputSource;
-  }
-  return null;
-}
-
-function isHandEvent(event) {
-  const inputSource = getEventInputSource(event);
-  return Boolean(inputSource && inputSource.hand);
-}
-
-// --- VR INTERACTION STATE & UNIFIED HANDLERS ---
 let vrDraggedInfo = {
   dot: null,
   handle: null,
@@ -1951,9 +1292,6 @@ let vrDraggedInfo = {
   isRotating: false,
   isDragging: false
 };
-let lastButtonClickTime = 0;
-const BUTTON_CLICK_COOLDOWN = 500; // ms
-
 // --- Unified Event Handlers ---
 
 // This single function will now handle the start of any primary VR action.
