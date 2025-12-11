@@ -476,29 +476,30 @@ function createAxisLabels() {
   function createVerticalLabelCanvas(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
-    canvas.height = 1024;
+    canvas.height = 2048;
     const ctx = canvas.getContext('2d');
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // Draw text vertically (one letter per line)
-    ctx.font = 'bold 80px Arial';
+    ctx.font = 'bold 65px Arial';
     ctx.fillStyle = '#00ff88';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
     ctx.shadowColor = '#00ff88';
-    ctx.shadowBlur = 30;
+    ctx.shadowBlur = 25;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     
     // Calculate spacing for vertical text
     const letters = text.split('');
-    const totalHeight = letters.length * 90;
-    const startY = (canvas.height - totalHeight) / 2 + 45;
+    const letterSpacing = 75;
+    const totalHeight = letters.length * letterSpacing;
+    const startY = (canvas.height - totalHeight) / 2 + letterSpacing / 2;
     
     letters.forEach((letter, i) => {
-      ctx.fillText(letter, canvas.width / 2, startY + i * 90);
+      ctx.fillText(letter, canvas.width / 2, startY + i * letterSpacing);
     });
     
     return canvas;
