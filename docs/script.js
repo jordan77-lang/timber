@@ -1,4 +1,4 @@
-// --- THREE.JS SETUP ---
+﻿// --- THREE.JS SETUP ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 
@@ -260,9 +260,9 @@ loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
   cubeGroup.add(loadedModel);
   
   // Create the three visible walls
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
+  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness Ã— Attack', new THREE.Vector3(-1, 0, 0));
+  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux Ã— Attack', new THREE.Vector3(0, -1, 0));
+  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux Ã— Brightness', new THREE.Vector3(0, 0, -1));
 }, undefined, function(error) {
   console.error('Error loading GLB model:', error);
   // Fallback to creating plane faces if model fails to load
@@ -270,9 +270,9 @@ loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
 });
 
 function createFallbackCube() {
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
+  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness Ã— Attack', new THREE.Vector3(-1, 0, 0));
+  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux Ã— Attack', new THREE.Vector3(0, -1, 0));
+  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux Ã— Brightness', new THREE.Vector3(0, 0, -1));
 }
 
 function createFace(position, rotation, color, label, normalVector) {
@@ -533,8 +533,8 @@ function createAxisLabels() {
   // Left edge - Brightness label removed
   
   // Left plane - Brightness label with two versions (front and back view)
-  // Front view label: "Brightness↓"
-  const brightnessLabelFront = createVerticalLabelCanvas('Brightness↓');
+  // Front view label: "Brightnessâ†“"
+  const brightnessLabelFront = createVerticalLabelCanvas('Brightnessâ†“');
   const brightnessTextureFront = new THREE.CanvasTexture(brightnessLabelFront);
   brightnessTextureFront.needsUpdate = true;
   const brightnessMaterialFront = new THREE.MeshBasicMaterial({
@@ -552,8 +552,8 @@ function createAxisLabels() {
   brightnessMeshFront.renderOrder = 999;
   cubeGroup.add(brightnessMeshFront);
   
-  // Back view label: "Brightness↓" (arrow pointing down from back view)
-  const brightnessLabelBack = createVerticalLabelCanvas('Brightness↓');
+  // Back view label: "Brightnessâ†“" (arrow pointing down from back view)
+  const brightnessLabelBack = createVerticalLabelCanvas('Brightnessâ†“');
   const brightnessTextureBack = new THREE.CanvasTexture(brightnessLabelBack);
   brightnessTextureBack.needsUpdate = true;
   const brightnessMaterialBack = new THREE.MeshBasicMaterial({
@@ -572,8 +572,8 @@ function createAxisLabels() {
   cubeGroup.add(brightnessMeshBack);
   
   // Bottom plane - Transients Density label with two versions (top and bottom view)
-  // Top view label: "Transients Density →"
-  const transientsLabelTop = createLargeLabelCanvas('Transients Density →');
+  // Top view label: "Transients Density â†’"
+  const transientsLabelTop = createLargeLabelCanvas('Transients Density â†’');
   const transientsTextureTop = new THREE.CanvasTexture(transientsLabelTop);
   transientsTextureTop.needsUpdate = true;
   const transientsMaterialTop = new THREE.MeshBasicMaterial({ 
@@ -592,8 +592,8 @@ function createAxisLabels() {
   transientsMeshTop.renderOrder = 999;
   cubeGroup.add(transientsMeshTop);
   
-  // Bottom view label: "← Transients Density" (arrow before text for bottom view)
-  const transientsLabelBottom = createLargeLabelCanvas('← Transients Density');
+  // Bottom view label: "â† Transients Density" (arrow before text for bottom view)
+  const transientsLabelBottom = createLargeLabelCanvas('â† Transients Density');
   const transientsTextureBottom = new THREE.CanvasTexture(transientsLabelBottom);
   transientsTextureBottom.needsUpdate = true;
   const transientsMaterialBottom = new THREE.MeshBasicMaterial({ 
@@ -668,8 +668,8 @@ function createFaceLabels() {
   // Left/Brightness face - Label removed (now using vertical axis labels)
   
   // Back/Transients face - "Spectral Flux" with two labels (front and back)
-  // Front-facing label: "Spectral Flux →"
-  const backLabelFront = createLargeLabelCanvas('Spectral Flux →');
+  // Front-facing label: "Spectral Flux â†’"
+  const backLabelFront = createLargeLabelCanvas('Spectral Flux â†’');
   const backTextureFront = new THREE.CanvasTexture(backLabelFront);
   backTextureFront.needsUpdate = true;
   const backMaterialFront = new THREE.MeshBasicMaterial({ 
@@ -689,8 +689,8 @@ function createFaceLabels() {
   spectralFluxLabel = backMeshFront;
   cubeGroup.add(backMeshFront);
   
-  // Back-facing label: "← Spectral Flux" (arrow before text pointing left from back view)
-  const backLabelBack = createLargeLabelCanvas('← Spectral Flux');
+  // Back-facing label: "â† Spectral Flux" (arrow before text pointing left from back view)
+  const backLabelBack = createLargeLabelCanvas('â† Spectral Flux');
   const backTextureBack = new THREE.CanvasTexture(backLabelBack);
   backTextureBack.needsUpdate = true;
   const backMaterialBack = new THREE.MeshBasicMaterial({ 
@@ -1284,227 +1284,6 @@ function normalizeTimbreCoords(point) {
   };
 }
 
-// Create an invisible cube that fills the entire volume for raycasting
-// Make it much larger to ensure we catch all areas
-const invisibleGeometry = new THREE.BoxGeometry(cubeSize * 1.5, cubeSize * 1.5, cubeSize * 1.5);
-const invisibleMaterial = new THREE.MeshBasicMaterial({ 
-  transparent: true, 
-  opacity: 0,
-  side: THREE.DoubleSide // Detect from both inside and outside
-});
-invisibleCube = new THREE.Mesh(invisibleGeometry, invisibleMaterial);
-invisibleCube.userData.isInvisibleBoundingBox = true;
-cubeGroup.add(invisibleCube);
-
-// Load the GLB model
-const loader = new THREE.GLTFLoader();
-loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
-  loadedModel = gltf.scene;
-  
-  // Scale and position the model
-  const box = new THREE.Box3().setFromObject(loadedModel);
-  const size = box.getSize(new THREE.Vector3());
-  const scale = cubeSize / Math.max(size.x, size.y, size.z);
-  loadedModel.scale.setScalar(scale);
-  
-  // Center the model
-  const center = box.getCenter(new THREE.Vector3());
-  loadedModel.position.sub(center.multiplyScalar(scale));
-  
-  // Make top and front faces more transparent for better visibility
-  loadedModel.traverse(function(child) {
-    if (child.isMesh) {
-      // Hide all faces by default
-      child.visible = false;
-    }
-  });
-  
-  cubeGroup.add(loadedModel);
-  
-  // Create the three visible walls
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
-}, undefined, function(error) {
-  console.error('Error loading GLB model:', error);
-  // Fallback to creating plane faces if model fails to load
-  createFallbackCube();
-});
-
-function createFallbackCube() {
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
-}
-
-function createFace(position, rotation, color, label, normalVector) {
-  const geometry = new THREE.PlaneGeometry(cubeSize, cubeSize, 10, 10);
-  const material = new THREE.MeshPhysicalMaterial({
-    color: color,
-    metalness: 0.05,
-    roughness: 0.2,
-    transparent: true,
-    opacity: 0.4,
-    transmission: 0.75,
-    ior: 1.5,
-    reflectivity: 0.5,
-    clearcoat: 0.3,
-    clearcoatRoughness: 0.2,
-    side: THREE.DoubleSide
-  });
-  const face = new THREE.Mesh(geometry, material);
-  face.position.copy(position);
-  face.rotation.setFromVector3(rotation);
-  face.userData = { label, normalVector, color };
-  face.castShadow = true;
-  face.receiveShadow = true;
-  cubeGroup.add(face);
-  faces.push(face);
-  
-  // Add glowing edge lines to the face
-  const edgeGeometry = new THREE.EdgesGeometry(geometry);
-  const edgeMaterial = new THREE.LineBasicMaterial({ 
-    color: color,
-    linewidth: 2
-  });
-  const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
-  edges.position.copy(position);
-  edges.rotation.setFromVector3(rotation);
-  cubeGroup.add(edges);
-  
-  return face;
-}
-
-// Create rotation handles - line with ball at the end on all four sides
-const handleBallGeometry = new THREE.SphereGeometry(0.12, 32, 32);
-const handleBallMaterial = new THREE.MeshPhysicalMaterial({
-  color: 0xffaa00,
-  metalness: 0.7,
-  roughness: 0.2,
-  emissive: 0x665500
-});
-
-// Front handle
-const handleLineFront = new THREE.BufferGeometry();
-handleLineFront.setFromPoints([
-  new THREE.Vector3(0, -cubeSize/2, cubeSize/2),
-  new THREE.Vector3(0, -cubeSize/2, cubeSize/2 + 0.6)
-]);
-const handleLineMatFront = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshFront = new THREE.Line(handleLineFront, handleLineMatFront);
-handleLineMeshFront.userData.isHandle = true;
-cubeGroup.add(handleLineMeshFront);
-
-const handleBallFront = new THREE.Mesh(handleBallGeometry, handleBallMaterial);
-handleBallFront.position.set(0, -cubeSize/2, cubeSize/2 + 0.6);
-handleBallFront.castShadow = true;
-handleBallFront.receiveShadow = true;
-handleBallFront.userData.isHandle = true;
-cubeGroup.add(handleBallFront);
-
-// Back handle
-const handleLineBack = new THREE.BufferGeometry();
-handleLineBack.setFromPoints([
-  new THREE.Vector3(0, -cubeSize/2, -cubeSize/2),
-  new THREE.Vector3(0, -cubeSize/2, -cubeSize/2 - 0.6)
-]);
-const handleLineMatBack = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshBack = new THREE.Line(handleLineBack, handleLineMatBack);
-handleLineMeshBack.userData.isHandle = true;
-cubeGroup.add(handleLineMeshBack);
-
-const handleBallBack = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallBack.position.set(0, -cubeSize/2, -cubeSize/2 - 0.6);
-handleBallBack.castShadow = true;
-handleBallBack.receiveShadow = true;
-handleBallBack.userData.isHandle = true;
-cubeGroup.add(handleBallBack);
-
-// Left handle
-const handleLineLeft = new THREE.BufferGeometry();
-handleLineLeft.setFromPoints([
-  new THREE.Vector3(-cubeSize/2, -cubeSize/2, 0),
-  new THREE.Vector3(-cubeSize/2 - 0.6, -cubeSize/2, 0)
-]);
-const handleLineMatLeft = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshLeft = new THREE.Line(handleLineLeft, handleLineMatLeft);
-handleLineMeshLeft.userData.isHandle = true;
-cubeGroup.add(handleLineMeshLeft);
-
-const handleBallLeft = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallLeft.position.set(-cubeSize/2 - 0.6, -cubeSize/2, 0);
-handleBallLeft.castShadow = true;
-handleBallLeft.receiveShadow = true;
-handleBallLeft.userData.isHandle = true;
-cubeGroup.add(handleBallLeft);
-
-// Right handle
-const handleLineRight = new THREE.BufferGeometry();
-handleLineRight.setFromPoints([
-  new THREE.Vector3(cubeSize/2, -cubeSize/2, 0),
-  new THREE.Vector3(cubeSize/2 + 0.6, -cubeSize/2, 0)
-]);
-const handleLineMatRight = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshRight = new THREE.Line(handleLineRight, handleLineMatRight);
-handleLineMeshRight.userData.isHandle = true;
-cubeGroup.add(handleLineMeshRight);
-
-const handleBallRight = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallRight.position.set(cubeSize/2 + 0.6, -cubeSize/2, 0);
-handleBallRight.castShadow = true;
-handleBallRight.receiveShadow = true;
-handleBallRight.userData.isHandle = true;
-cubeGroup.add(handleBallRight);
-
-// Create array of all handle balls for raycasting
-const handleBalls = [handleBallFront, handleBallBack, handleBallLeft, handleBallRight];
-
-// Don't create faces immediately - wait for model to load or use fallback
-// createFace calls are now in createFallbackCube() function
-
-// Enhanced lighting for realistic appearance
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
-scene.add(ambientLight);
-
-// Key light (main directional light with shadows)
-const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-keyLight.position.set(5, 8, 5);
-keyLight.castShadow = true;
-keyLight.shadow.mapSize.width = 2048;
-keyLight.shadow.mapSize.height = 2048;
-keyLight.shadow.camera.near = 0.5;
-keyLight.shadow.camera.far = 50;
-scene.add(keyLight);
-
-// Fill light (softer, from opposite side)
-const fillLight = new THREE.DirectionalLight(0x4488ff, 0.5);
-fillLight.position.set(-5, 3, -5);
-scene.add(fillLight);
-
-// Rim light (from behind for edge definition)
-const rimLight = new THREE.DirectionalLight(0xff8844, 0.3);
-rimLight.position.set(0, 2, -8);
-scene.add(rimLight);
-
-// Add subtle fog for depth
-scene.fog = new THREE.Fog(0x000000, 5, 15);
-
-camera.position.set(3.5, 3.2, 3.5);
-camera.lookAt(0, 0, 0);
-
-// Position cube for VR - move it in front of user when in VR mode
-renderer.xr.addEventListener('sessionstart', () => {
-  cubeGroup.position.set(0, 1.2, -2.5);
-  cubeGroup.scale.setScalar(0.6);
-});
-
-renderer.xr.addEventListener('sessionend', () => {
-  cubeGroup.position.set(0, 0, 0);
-  cubeGroup.scale.setScalar(1);
-  camera.position.set(3.5, 3.2, 3.5);
-  camera.lookAt(0, 0, 0);
-});
-
 // --- AXIS LABELS ---
 function createAxisLabels() {
   // Function to create a glowing text canvas
@@ -1595,8 +1374,8 @@ function createAxisLabels() {
   // Left edge - Brightness label removed
   
   // Left plane - Brightness label with two versions (front and back view)
-  // Front view label: "Brightness↓"
-  const brightnessLabelFront = createVerticalLabelCanvas('Brightness↓');
+  // Front view label: "Brightnessâ†“"
+  const brightnessLabelFront = createVerticalLabelCanvas('Brightnessâ†“');
   const brightnessTextureFront = new THREE.CanvasTexture(brightnessLabelFront);
   brightnessTextureFront.needsUpdate = true;
   const brightnessMaterialFront = new THREE.MeshBasicMaterial({
@@ -1614,8 +1393,8 @@ function createAxisLabels() {
   brightnessMeshFront.renderOrder = 999;
   cubeGroup.add(brightnessMeshFront);
   
-  // Back view label: "Brightness↓" (arrow pointing down from back view)
-  const brightnessLabelBack = createVerticalLabelCanvas('Brightness↓');
+  // Back view label: "Brightnessâ†“" (arrow pointing down from back view)
+  const brightnessLabelBack = createVerticalLabelCanvas('Brightnessâ†“');
   const brightnessTextureBack = new THREE.CanvasTexture(brightnessLabelBack);
   brightnessTextureBack.needsUpdate = true;
   const brightnessMaterialBack = new THREE.MeshBasicMaterial({
@@ -1634,8 +1413,8 @@ function createAxisLabels() {
   cubeGroup.add(brightnessMeshBack);
   
   // Bottom plane - Transients Density label with two versions (top and bottom view)
-  // Top view label: "Transients Density →"
-  const transientsLabelTop = createLargeLabelCanvas('Transients Density →');
+  // Top view label: "Transients Density â†’"
+  const transientsLabelTop = createLargeLabelCanvas('Transients Density â†’');
   const transientsTextureTop = new THREE.CanvasTexture(transientsLabelTop);
   transientsTextureTop.needsUpdate = true;
   const transientsMaterialTop = new THREE.MeshBasicMaterial({ 
@@ -1654,8 +1433,8 @@ function createAxisLabels() {
   transientsMeshTop.renderOrder = 999;
   cubeGroup.add(transientsMeshTop);
   
-  // Bottom view label: "← Transients Density" (arrow before text for bottom view)
-  const transientsLabelBottom = createLargeLabelCanvas('← Transients Density');
+  // Bottom view label: "â† Transients Density" (arrow before text for bottom view)
+  const transientsLabelBottom = createLargeLabelCanvas('â† Transients Density');
   const transientsTextureBottom = new THREE.CanvasTexture(transientsLabelBottom);
   transientsTextureBottom.needsUpdate = true;
   const transientsMaterialBottom = new THREE.MeshBasicMaterial({ 
@@ -1730,8 +1509,8 @@ function createFaceLabels() {
   // Left/Brightness face - Label removed (now using vertical axis labels)
   
   // Back/Transients face - "Spectral Flux" with two labels (front and back)
-  // Front-facing label: "Spectral Flux →"
-  const backLabelFront = createLargeLabelCanvas('Spectral Flux →');
+  // Front-facing label: "Spectral Flux â†’"
+  const backLabelFront = createLargeLabelCanvas('Spectral Flux â†’');
   const backTextureFront = new THREE.CanvasTexture(backLabelFront);
   backTextureFront.needsUpdate = true;
   const backMaterialFront = new THREE.MeshBasicMaterial({ 
@@ -1751,8 +1530,8 @@ function createFaceLabels() {
   spectralFluxLabel = backMeshFront;
   cubeGroup.add(backMeshFront);
   
-  // Back-facing label: "← Spectral Flux" (arrow before text pointing left from back view)
-  const backLabelBack = createLargeLabelCanvas('← Spectral Flux');
+  // Back-facing label: "â† Spectral Flux" (arrow before text pointing left from back view)
+  const backLabelBack = createLargeLabelCanvas('â† Spectral Flux');
   const backTextureBack = new THREE.CanvasTexture(backLabelBack);
   backTextureBack.needsUpdate = true;
   const backMaterialBack = new THREE.MeshBasicMaterial({ 
