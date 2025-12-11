@@ -1270,58 +1270,6 @@ function createHoverLines(point, isPermanent = false) {
   return group;
 }
 
-setupController(0);
-setupController(1);
-
-// VR interaction state
-let vrDraggedDot = null;
-let vrDraggedController = null;
-let vrDraggedHand = null;
-let vrDraggedHandle = null;
-let vrDraggedHandRotating = null;
-let lastButtonClickTime = 0;
-const BUTTON_CLICK_COOLDOWN = 500; // ms to prevent double-clicks
-const hands = [];
-const handModels = [];
-
-// Hand tracking setup
-function setupHand(index) {
-  const hand = renderer.xr.getHand(index);
-  hand.addEventListener('pinchstart', onHandPinchStart);
-  hand.addEventListener('pinchend', onHandPinchEnd);
-  scene.add(hand);
-  hands[index] = hand;
-  
-  // Store references to joint spheres - they'll be created dynamically when hand connects
-  handModels[index] = {
-    spheres: {},
-    pointerRay: null
-  };
-  
-  return hand;
-}
-
-setupHand(0);
-setupHand(1);
-
-// --- BUILD TIMBRE CUBE ---
-const cubeGroup = new THREE.Group();
-cubeGroup.rotation.y = Math.PI / 12; // Rotate counter-clockwise about 15 degrees
-scene.add(cubeGroup);
-
-const cubeSize = 4;
-const faces = [];
-let hoverLines = null;
-let vrHoverLinesLeft = null;
-let vrHoverLinesRight = null;
-let loadedModel = null;
-let invisibleCube = null;
-let spectralFluxLabel = null;
-const tempVecA = new THREE.Vector3();
-const tempVecB = new THREE.Vector3();
-const tempQuatA = new THREE.Quaternion();
-const NEG_Z = new THREE.Vector3(0, 0, -1);
-
 // Convert a cube-local point to normalized timbre parameters (0-1 range).
 function normalizeTimbreCoords(point) {
   const halfSize = cubeSize / 2;
