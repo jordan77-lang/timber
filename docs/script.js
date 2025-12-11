@@ -1276,21 +1276,6 @@ function createHoverLines(point, isPermanent = false) {
   return group;
 }
 
-// Convert a cube-local point to normalized timbre parameters (0-1 range).
-function normalizeTimbreCoords(point) {
-  const halfSize = cubeSize / 2;
-  const normalizedX = (point.x + halfSize) / cubeSize;
-  const normalizedY = 1 - ((point.y + halfSize) / cubeSize);
-  const normalizedZ = (point.z + halfSize) / cubeSize;
-
-  return {
-    x: THREE.MathUtils.clamp(normalizedX, 0, 1),
-    y: THREE.MathUtils.clamp(normalizedY, 0, 1),
-    z: THREE.MathUtils.clamp(normalizedZ, 0, 1)
-  };
-}
-
-// --- AXIS LABELS ---
 let vrDraggedInfo = {
   dot: null,
   handle: null,
