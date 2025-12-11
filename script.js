@@ -1631,9 +1631,9 @@ function createAxisLabels() {
   
   // Left edge - Brightness label removed
   
-  // Left plane - Brightness label with two versions (front and back view)
-  // Front view label: "Brightness↓"
-  const brightnessLabelFront = createVerticalLabelCanvas('Brightness↓');
+  // Left plane - Spectral Centroid label with two versions (front and back view)
+  // Front view label: "Spectral Centroid"
+  const brightnessLabelFront = createVerticalLabelCanvas('Spectral Centroid');
   const brightnessTextureFront = new THREE.CanvasTexture(brightnessLabelFront);
   brightnessTextureFront.needsUpdate = true;
   const brightnessMaterialFront = new THREE.MeshBasicMaterial({
@@ -1651,8 +1651,8 @@ function createAxisLabels() {
   brightnessMeshFront.renderOrder = 999;
   cubeGroup.add(brightnessMeshFront);
   
-  // Back view label: "Brightness↓" (arrow pointing down from back view)
-  const brightnessLabelBack = createVerticalLabelCanvas('Brightness↓');
+  // Back view label: "Spectral Centroid"
+  const brightnessLabelBack = createVerticalLabelCanvas('Spectral Centroid');
   const brightnessTextureBack = new THREE.CanvasTexture(brightnessLabelBack);
   brightnessTextureBack.needsUpdate = true;
   const brightnessMaterialBack = new THREE.MeshBasicMaterial({
@@ -1670,9 +1670,9 @@ function createAxisLabels() {
   brightnessMeshBack.renderOrder = 999;
   cubeGroup.add(brightnessMeshBack);
   
-  // Bottom plane - Transients Density label with two versions (top and bottom view)
-  // Top view label: "Transients Density →"
-  const transientsLabelTop = createLargeLabelCanvas('Transients Density →');
+  // Bottom plane - Noisyness label with two versions (top and bottom view)
+  // Top view label: "Noisyness"
+  const transientsLabelTop = createLargeLabelCanvas('Noisyness');
   const transientsTextureTop = new THREE.CanvasTexture(transientsLabelTop);
   transientsTextureTop.needsUpdate = true;
   const transientsMaterialTop = new THREE.MeshBasicMaterial({ 
@@ -1691,8 +1691,8 @@ function createAxisLabels() {
   transientsMeshTop.renderOrder = 999;
   cubeGroup.add(transientsMeshTop);
   
-  // Bottom view label: "← Transients Density" (arrow before text for bottom view)
-  const transientsLabelBottom = createLargeLabelCanvas('← Transients Density');
+  // Bottom view label: "Noisyness"
+  const transientsLabelBottom = createLargeLabelCanvas('Noisyness');
   const transientsTextureBottom = new THREE.CanvasTexture(transientsLabelBottom);
   transientsTextureBottom.needsUpdate = true;
   const transientsMaterialBottom = new THREE.MeshBasicMaterial({ 
@@ -1766,9 +1766,9 @@ function createFaceLabels() {
   
   // Left/Brightness face - Label removed (now using vertical axis labels)
   
-  // Back/Transients face - "Spectral Flux" with two labels (front and back)
-  // Front-facing label: "Spectral Flux →"
-  const backLabelFront = createLargeLabelCanvas('Spectral Flux →');
+  // Back/Transients face - "Inharmonicity" with two labels (front and back)
+  // Front-facing label: "Inharmonicity"
+  const backLabelFront = createLargeLabelCanvas('Inharmonicity');
   const backTextureFront = new THREE.CanvasTexture(backLabelFront);
   backTextureFront.needsUpdate = true;
   const backMaterialFront = new THREE.MeshBasicMaterial({ 
@@ -1788,8 +1788,8 @@ function createFaceLabels() {
   spectralFluxLabel = backMeshFront;
   cubeGroup.add(backMeshFront);
   
-  // Back-facing label: "← Spectral Flux" (arrow before text pointing left from back view)
-  const backLabelBack = createLargeLabelCanvas('← Spectral Flux');
+  // Back-facing label: "Inharmonicity"
+  const backLabelBack = createLargeLabelCanvas('Inharmonicity');
   const backTextureBack = new THREE.CanvasTexture(backLabelBack);
   backTextureBack.needsUpdate = true;
   const backMaterialBack = new THREE.MeshBasicMaterial({ 
