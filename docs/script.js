@@ -44,6 +44,9 @@ function createVRButton(isSupported) {
     button.textContent = 'ENTER VR';
     button.onclick = function() {
       if (renderer.xr.isPresenting) {
+        if (hoverMarker) {
+          hoverMarker.visible = false;
+        }
         renderer.xr.getSession().end();
       } else {
         navigator.xr.requestSession('immersive-vr', {
@@ -198,6 +201,7 @@ scene.add(cubeGroup);
 const cubeSize = 4;
 const faces = [];
 let hoverLines = null;
+let hoverMarker = null;
 let vrHoverLinesLeft = null;
 let vrHoverLinesRight = null;
 let loadedModel = null;
@@ -207,6 +211,20 @@ const tempVecA = new THREE.Vector3();
 const tempVecB = new THREE.Vector3();
 const tempQuatA = new THREE.Quaternion();
 const NEG_Z = new THREE.Vector3(0, 0, -1);
+
+// Hover marker that previews dot placement
+const hoverMarkerGeometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+const hoverMarkerMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffff00,
+  transparent: true,
+  opacity: 0.35,
+  depthTest: false,
+  depthWrite: false
+});
+hoverMarker = new THREE.Mesh(hoverMarkerGeometry, hoverMarkerMaterial);
+hoverMarker.visible = false;
+hoverMarker.renderOrder = 20;
+cubeGroup.add(hoverMarker);
 
 // Convert a cube-local point to normalized timbre parameters (0-1 range).
 function normalizeTimbreCoords(point) {
@@ -1240,7 +1258,14 @@ function createHoverLines(point, isPermanent = false) {
   const lineColor = 0xffff00;
   const opacity = isPermanent ? 0.4 : 0.8; // More transparent for permanent crosshairs
   const extension = 0.05; // Extend lines slightly past walls
-  const cubeHalfSize = 0.225 / 2; // Half the size of placed cubes (0.1125)
+
+  const materialConfig = {
+    color: lineColor,
+    transparent: true,
+    opacity: opacity,
+    depthTest: false,
+    depthWrite: false
+  };
   
   // Create three simple lines from dot to each wall
   // Line to left wall (X = -cubeSize/2)
@@ -1250,11 +1275,8 @@ function createHoverLines(point, isPermanent = false) {
       point.x, point.y, point.z,
       -cubeSize/2 - extension, point.y, point.z
     ]), 3));
-  const leftLine = new THREE.Line(toLeftWall, new THREE.LineBasicMaterial({ 
-    color: lineColor, 
-    transparent: true, 
-    opacity: opacity 
-  }));
+  const leftLine = new THREE.Line(toLeftWall, new THREE.LineBasicMaterial(materialConfig));
+  leftLine.renderOrder = 25;
   group.add(leftLine);
   
   // Line to bottom wall (Y = -cubeSize/2)
@@ -1264,11 +1286,8 @@ function createHoverLines(point, isPermanent = false) {
       point.x, point.y, point.z,
       point.x, -cubeSize/2 - extension, point.z
     ]), 3));
-  const bottomLine = new THREE.Line(toBottomWall, new THREE.LineBasicMaterial({ 
-    color: lineColor, 
-    transparent: true, 
-    opacity: opacity 
-  }));
+  const bottomLine = new THREE.Line(toBottomWall, new THREE.LineBasicMaterial(materialConfig));
+  bottomLine.renderOrder = 25;
   group.add(bottomLine);
   
   // Line to back wall (Z = -cubeSize/2)
@@ -1278,12 +1297,12 @@ function createHoverLines(point, isPermanent = false) {
       point.x, point.y, point.z,
       point.x, point.y, -cubeSize/2 - extension
     ]), 3));
-  const backLine = new THREE.Line(toBackWall, new THREE.LineBasicMaterial({ 
-    color: lineColor, 
-    transparent: true, 
-    opacity: opacity 
-  }));
+  const backLine = new THREE.Line(toBackWall, new THREE.LineBasicMaterial(materialConfig));
+  backLine.renderOrder = 25;
   group.add(backLine);
+
+  group.userData.isPermanent = isPermanent;
+  group.userData.basePosition = point.clone();
 
   return group;
 }
@@ -1736,6 +1755,9 @@ function animate() {
 
   // --- VR-SPECIFIC LOGIC ---
   if (renderer.xr.isPresenting) {
+    if (hoverMarker) {
+      hoverMarker.visible = false;
+    }
     // --- UNIFIED POINTER AND VISUALIZATION LOGIC ---
     const activeControllers = [...controllers, ...hands];
     activeControllers.forEach((source, index) => {
@@ -1936,7 +1958,15 @@ function animate() {
       if (intersectPoint) {
         hoverLines = createHoverLines(intersectPoint);
         cubeGroup.add(hoverLines);
+        if (hoverMarker) {
+          hoverMarker.position.copy(intersectPoint);
+          hoverMarker.visible = true;
+        }
+      } else if (hoverMarker) {
+        hoverMarker.visible = false;
       }
+    } else if (hoverMarker) {
+      hoverMarker.visible = false;
     }
   }
   
