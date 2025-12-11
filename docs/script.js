@@ -996,8 +996,6 @@ function destroyDot(dot) {
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let draggedDot = null;
-let draggedDotOutsideBounds = false; // Track if dragged dot went outside bounds
-let wasDragging = false; // Track if we just finished dragging to prevent new dot creation
 let draggingHandle = false;
 let lastMouseX = 0;
 let lastMouseY = 0;
@@ -1055,73 +1053,82 @@ function getIntersectionPoint(raycaster) {
   return intersectLocal;
 }
 
-async function onCanvasClick(event) {
-  // Don't create a new dot if we just finished dragging
-  if (wasDragging) {
-    wasDragging = false;
-    event.preventDefault();
-    return;
-  }
-
-  const rect = renderer.domElement.getBoundingClientRect();
-  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, camera);
-  const point = getIntersectionPoint(raycaster);
-
-  if (point) {
-    await ensureAudioStarted();
-    addDotAtPoint(point);
-  }
-}
-
 function addDotAtPoint(point) {
-  // Create a small cube instead of sphere
-  const dotGeometry = new THREE.BoxGeometry(0.225, 0.225, 0.225);
-  const dotMaterial = new THREE.MeshPhysicalMaterial({ 
-    color: 0xff0088,
-    emissive: 0xff0088,
-    emissiveIntensity: 0.5,
-    metalness: 0.8,
-    roughness: 0.2,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.1
-  });
-  const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
-  dotMesh.position.copy(point);
-  dotMesh.castShadow = true;
-  dotMesh.receiveShadow = true;
-  dotMesh.renderOrder = 0; // Render cubes first
-  cubeGroup.add(dotMesh);
-  
-  // Create a shadow plane that projects straight down to the bottom wall
-  const shadowGeometry = new THREE.PlaneGeometry(0.2, 0.2);
-  const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0.4 });
-  const shadowPlane = new THREE.Mesh(shadowGeometry, shadowMaterial);
-  shadowPlane.receiveShadow = true;
-  
-  // Position shadow directly below the dot on the bottom wall (Y = -cubeSize/2)
-  shadowPlane.position.set(point.x, -cubeSize/2, point.z);
-  shadowPlane.rotation.x = Math.PI / 2; // Rotate to be horizontal on the bottom
-  cubeGroup.add(shadowPlane);
-  
+  // Maintain a single marker by removing extras if they exist
+  while (dots.length > 1) {
+    destroyDot(dots[dots.length - 1]);
+  }
+
+  let dot = dots[0];
+
+  if (!dot) {
+    // Create a small cube instead of sphere
+    const dotGeometry = new THREE.BoxGeometry(0.225, 0.225, 0.225);
+    const dotMaterial = new THREE.MeshPhysicalMaterial({ 
+      color: 0xff0088,
+      emissive: 0xff0088,
+      emissiveIntensity: 0.5,
+      metalness: 0.8,
+      roughness: 0.2,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.1
+    });
+    const dotMesh = new THREE.Mesh(dotGeometry, dotMaterial);
+    dotMesh.castShadow = true;
+    dotMesh.receiveShadow = true;
+    dotMesh.renderOrder = 0; // Render cubes first
+    cubeGroup.add(dotMesh);
+
+    // Create a shadow plane that projects straight down to the bottom wall
+    const shadowGeometry = new THREE.PlaneGeometry(0.2, 0.2);
+    const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0.4 });
+    const shadowPlane = new THREE.Mesh(shadowGeometry, shadowMaterial);
+    shadowPlane.receiveShadow = true;
+    shadowPlane.rotation.x = Math.PI / 2; // Rotate to be horizontal on the bottom
+    cubeGroup.add(shadowPlane);
+
+    dot = {
+      mesh: dotMesh,
+      shadow: shadowPlane,
+      crosshairs: null,
+      x: 0,
+      y: 0,
+      z: 0,
+      id: dotIdCounter++
+    };
+    dots.push(dot);
+    createDotVoice(dot);
+  }
+
+  // Update position and related visuals
+  dot.mesh.position.copy(point);
+  dot.mesh.visible = true;
+  dot.shadow.position.set(point.x, -cubeSize / 2, point.z);
+  dot.shadow.visible = true;
+
+  if (dot.crosshairs) {
+    cubeGroup.remove(dot.crosshairs);
+    dot.crosshairs.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+  }
+  dot.crosshairs = createHoverLines(point, true);
+  cubeGroup.add(dot.crosshairs);
+
   // Map 3D position to timbre parameters (brightness increases downward)
   const normalized = normalizeTimbreCoords(point);
-  const { x, y, z } = normalized;
-  
-  // Create permanent crosshairs for this dot
-  const crosshairs = createHoverLines(point, true);
-  cubeGroup.add(crosshairs);
-  
-  const dotId = dotIdCounter++;
-  const dot = { mesh: dotMesh, shadow: shadowPlane, crosshairs: crosshairs, x, y, z, id: dotId };
-  
-  dots.push(dot);
-  createDotVoice(dot);
+  dot.x = normalized.x;
+  dot.y = normalized.y;
+  dot.z = normalized.z;
+
   updateDotAudio(dot);
   if (dot.voice) {
     dot.voice.ampEnv.triggerAttack();
+  }
+
+  if (hoverMarker) {
+    hoverMarker.visible = false;
   }
 }
 
@@ -1151,7 +1158,6 @@ function onMouseDown(event) {
     draggedDot = dots.find(d => d.mesh === clickedMesh);
     
     if (draggedDot) {
-      wasDragging = false; // Reset flag at start of potential drag
       dragPlane.setFromNormalAndCoplanarPoint(
         camera.getWorldDirection(new THREE.Vector3()),
         draggedDot.mesh.position
@@ -1168,7 +1174,6 @@ function onMouseMove(event) {
 
   // Handle cube rotation ONLY if dragging the handle AND mouse button is pressed
   if (draggingHandle && (event.buttons & 1)) { // Check if left mouse button is pressed
-    wasDragging = true; // Mark that we're dragging the handle
     const deltaX = event.clientX - lastMouseX;
     const deltaY = event.clientY - lastMouseY;
     cubeGroup.rotation.y += deltaX * 0.005;
@@ -1184,27 +1189,14 @@ function onMouseMove(event) {
   if (draggingHandle) return;
 
   if (draggedDot) {
-    wasDragging = true; // Mark that we're in a drag operation
     raycaster.setFromCamera(mouse, camera);
     raycaster.ray.intersectPlane(dragPlane, dragPoint);
     
-    // Check if the dot is being dragged outside the cube bounds
-    draggedDotOutsideBounds = dragPoint.x < -cubeSize/2 || dragPoint.x > cubeSize/2 ||
-                              dragPoint.y < -cubeSize/2 || dragPoint.y > cubeSize/2 ||
-                              dragPoint.z < -cubeSize/2 || dragPoint.z > cubeSize/2;
-    
-    // If outside bounds, show visual indicator but don't move or destroy yet
-    if (draggedDotOutsideBounds) {
-      draggedDot.mesh.visible = false; // Hide the dot while outside
-      return; // Wait for mouse up to destroy
-    }
-    
-    // Only move if within bounds
+    // Clamp position to stay within cube bounds
     dragPoint.x = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.x));
     dragPoint.y = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.y));
     dragPoint.z = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.z));
     
-    draggedDot.mesh.visible = true; // Show the dot again if it comes back
     draggedDot.mesh.position.copy(dragPoint);
     
     // Update shadow position to follow the dot
@@ -1243,13 +1235,7 @@ function onMouseMove(event) {
 }
 
 function onMouseUp(event) {
-  // If the dragged dot was outside bounds when released, destroy it
-  if (draggedDot && draggedDotOutsideBounds) {
-    destroyDot(draggedDot);
-  }
-  
   draggedDot = null;
-  draggedDotOutsideBounds = false;
   draggingHandle = false;
 }
 
@@ -1386,11 +1372,7 @@ async function handleVRInputStart(event) {
     return; // Stop further processing
   }
 
-  // 4. If nothing else was hit, try to place a new dot
-  const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
-  if (point) {
-    addDotAtPoint(point);
-  }
+  // 4. Marker placement now initiated via UI controls
 }
 
 function handleVRInputEnd(event) {
@@ -1539,7 +1521,6 @@ function handleVRControllerRaycast(controller, index) {
   // based on the unified vrDraggedInfo state.
 }
 
-renderer.domElement.addEventListener('click', onCanvasClick);
 renderer.domElement.addEventListener('mousedown', onMouseDown);
 renderer.domElement.addEventListener('mousemove', onMouseMove);
 renderer.domElement.addEventListener('mouseup', onMouseUp);
@@ -1660,10 +1641,12 @@ function createVRUI() {
     return button;
   }
   
-  const downloadBtn = createButton('Download', '#4CAF50', 0);
-  const clearBtn = createButton('Clear', '#f44336', 1);
-  const resetBtn = createButton('Reset', '#2196F3', 2);
+  const placeBtn = createButton('Place Marker', '#ffb300', 0);
+  const downloadBtn = createButton('Download', '#4CAF50', 1);
+  const clearBtn = createButton('Clear', '#f44336', 2);
+  const resetBtn = createButton('Reset', '#2196F3', 3);
   
+  panelGroup.add(placeBtn);
   panelGroup.add(downloadBtn);
   panelGroup.add(clearBtn);
   panelGroup.add(resetBtn);
@@ -1722,7 +1705,11 @@ function handleVRUIClick(button) {
   }, 150);
 
   const action = button.userData.buttonAction;
-  if (action === 'download') {
+  if (action === 'place marker') {
+    ensureAudioStarted().then(() => {
+      addDotAtPoint(new THREE.Vector3(0, 0, 0));
+    });
+  } else if (action === 'download') {
     const link = document.createElement('a');
     link.download = 'spectrograph.png';
     link.href = spectroCanvas.toDataURL();
@@ -1731,6 +1718,10 @@ function handleVRUIClick(button) {
     while (dots.length > 0) {
       destroyDot(dots[0]);
     }
+    if (hoverMarker) {
+      hoverMarker.visible = false;
+    }
+    draggedDot = null;
   } else if (action === 'reset') {
     cubeGroup.rotation.x = 0;
     cubeGroup.rotation.y = Math.PI / 12;
@@ -2045,6 +2036,11 @@ function animate() {
 renderer.setAnimationLoop(animate);
 
 // --- BUTTONS ---
+document.getElementById('place-marker').addEventListener('click', async () => {
+  await ensureAudioStarted();
+  addDotAtPoint(new THREE.Vector3(0, 0, 0));
+});
+
 document.getElementById('download').addEventListener('click', () => {
   const link = document.createElement('a');
   link.download = 'spectrograph.png';
@@ -2056,6 +2052,10 @@ document.getElementById('clear').addEventListener('click', () => {
   while (dots.length > 0) {
     destroyDot(dots[0]);
   }
+  if (hoverMarker) {
+    hoverMarker.visible = false;
+  }
+  draggedDot = null;
 });
 
 document.getElementById('reset-position').addEventListener('click', () => {
