@@ -999,8 +999,6 @@ let draggedDot = null;
 let draggingHandle = false;
 let lastMouseX = 0;
 let lastMouseY = 0;
-const dragPlane = new THREE.Plane();
-const dragPoint = new THREE.Vector3();
 
 function getIntersectionPoint(raycaster) {
   // First check if mouse is over the cube at all
@@ -1158,10 +1156,6 @@ function onMouseDown(event) {
     draggedDot = dots.find(d => d.mesh === clickedMesh);
     
     if (draggedDot) {
-      dragPlane.setFromNormalAndCoplanarPoint(
-        camera.getWorldDirection(new THREE.Vector3()),
-        draggedDot.mesh.position
-      );
       event.preventDefault();
     }
   }
@@ -1190,33 +1184,32 @@ function onMouseMove(event) {
 
   if (draggedDot) {
     raycaster.setFromCamera(mouse, camera);
-    raycaster.ray.intersectPlane(dragPlane, dragPoint);
-    
-    // Clamp position to stay within cube bounds
-    dragPoint.x = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.x));
-    dragPoint.y = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.y));
-    dragPoint.z = Math.max(-cubeSize/2, Math.min(cubeSize/2, dragPoint.z));
-    
-    draggedDot.mesh.position.copy(dragPoint);
-    
+    const intersectPoint = getIntersectionPoint(raycaster);
+
+    if (!intersectPoint) {
+      return; // Keep dot at last valid location if ray misses cube
+    }
+
+    draggedDot.mesh.position.copy(intersectPoint);
+
     // Update shadow position to follow the dot
-    draggedDot.shadow.position.set(dragPoint.x, -cubeSize/2, dragPoint.z);
-    
+    draggedDot.shadow.position.set(intersectPoint.x, -cubeSize/2, intersectPoint.z);
+
     // Update crosshairs position to follow the dot
     if (draggedDot.crosshairs) {
       cubeGroup.remove(draggedDot.crosshairs);
-      draggedDot.crosshairs = createHoverLines(dragPoint, true);
+      draggedDot.crosshairs = createHoverLines(intersectPoint, true);
       cubeGroup.add(draggedDot.crosshairs);
     }
-    
+
     // Update all 3D coordinates based on position in volume
-    const draggedNormalized = normalizeTimbreCoords(dragPoint);
+    const draggedNormalized = normalizeTimbreCoords(intersectPoint);
     draggedDot.x = draggedNormalized.x;
     draggedDot.y = draggedNormalized.y;
     draggedDot.z = draggedNormalized.z;
-    
+
     updateDotAudio(draggedDot);
-    return; // Don't show hover lines while dragging (permanent crosshairs are shown)
+    return; // Skip hover logic while dragging
   }
   
 }
