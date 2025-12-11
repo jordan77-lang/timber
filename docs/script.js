@@ -756,6 +756,14 @@ const reverb = new Tone.Reverb({
 });
 reverb.connect(mixBus);
 
+const clarinetSampleUrl = 'clarinet_G.wav';
+const clarinetTemplatePlayer = new Tone.Player({
+  url: clarinetSampleUrl,
+  loop: true,
+  autostart: false
+});
+const clarinetSampleLoaded = clarinetTemplatePlayer.loaded;
+
 let audioReadyPromise = null;
 async function ensureAudioStarted() {
   if (Tone.context.state === 'running') {
@@ -769,6 +777,11 @@ async function ensureAudioStarted() {
       });
   }
   await audioReadyPromise;
+  try {
+    await clarinetSampleLoaded;
+  } catch (err) {
+    console.error('Failed to load clarinet sample:', err);
+  }
 }
 
 // Track playing dots
@@ -798,6 +811,19 @@ function createDotVoice(dot) {
     type: 'sine'
   }).connect(ampEnv);
   autoFilter.start();
+
+  let sampleGain = null;
+  let samplePlayer = null;
+  if (clarinetTemplatePlayer.buffer && clarinetTemplatePlayer.buffer.loaded) {
+    sampleGain = new Tone.Gain(0.45).connect(autoFilter);
+    samplePlayer = new Tone.Player({
+      buffer: clarinetTemplatePlayer.buffer,
+      loop: true,
+      fadeIn: 0.02,
+      fadeOut: 0.08,
+      autostart: false
+    }).connect(sampleGain);
+  }
 
   const fundamentalGain = new Tone.Gain(0.25).connect(autoFilter);
   const lowGain = new Tone.Gain(0.25).connect(autoFilter);
@@ -847,11 +873,13 @@ function createDotVoice(dot) {
   noise.start();
   detuneLfo.start();
 
-  dot.voice = {
+  const voice = {
     output,
     reverbSend,
     ampEnv,
     autoFilter,
+    samplePlayer,
+    sampleGain,
     fundamentalGain,
     lowGain,
     highGain,
@@ -864,6 +892,24 @@ function createDotVoice(dot) {
     detuneLfo,
     disposing: false
   };
+  dot.voice = voice;
+
+  if (samplePlayer) {
+    samplePlayer.loaded
+      .then(() => {
+        if (voice.disposing) {
+          return;
+        }
+        try {
+          samplePlayer.start();
+        } catch (err) {
+          console.error('Failed to start clarinet sample:', err);
+        }
+      })
+      .catch(err => {
+        console.error('Clarinet sample player failed to load:', err);
+      });
+  }
 }
 
 function updateDotAudio(dot) {
@@ -890,9 +936,18 @@ function updateDotAudio(dot) {
   const highWeight = THREE.MathUtils.lerp(0.10, 0.40, inharmonicity);
   const weightSum = fundamentalWeight + lowWeight + highWeight;
   const overallGain = 0.5 + (1 - noisyness) * 0.2;
-  voice.fundamentalGain.gain.rampTo((fundamentalWeight / weightSum) * overallGain, 0.12);
-  voice.lowGain.gain.rampTo((lowWeight / weightSum) * overallGain, 0.12);
-  voice.highGain.gain.rampTo((highWeight / weightSum) * overallGain, 0.12);
+  const sampleWeight = THREE.MathUtils.lerp(0.55, 0.3, noisyness);
+  const harmonicWeight = Math.max(0.0001, 1 - sampleWeight);
+  if (voice.sampleGain) {
+    voice.sampleGain.gain.rampTo(overallGain * sampleWeight, 0.12);
+  }
+  voice.fundamentalGain.gain.rampTo((fundamentalWeight / weightSum) * overallGain * harmonicWeight, 0.12);
+  voice.lowGain.gain.rampTo((lowWeight / weightSum) * overallGain * harmonicWeight, 0.12);
+  voice.highGain.gain.rampTo((highWeight / weightSum) * overallGain * harmonicWeight, 0.12);
+  if (voice.samplePlayer) {
+    const clarinetReference = 1200;
+    voice.samplePlayer.playbackRate = baseFrequency / clarinetReference;
+  }
 
   // Map noisyness (Z axis) to noise layer characteristics
   const noiseGainTarget = 0.05 + noisyness * 0.55;
@@ -919,6 +974,11 @@ function updateDotAudio(dot) {
   voice.ampEnv.release = 0.45 + noisyness * 1.3;
 
   voice.reverbSend.gain.rampTo(0.1 + spectralCentroid * 0.12 + noisyness * 0.2, 0.2);
+  updateDescriptorReadouts({
+    centroid: spectralCentroid,
+    noisiness: noisyness,
+    inharm: inharmonicity
+  });
 }
 
 function disposeDotVoice(dot) {
@@ -938,6 +998,15 @@ function disposeDotVoice(dot) {
     voice.fundamental.stop();
     voice.lowPartial.stop();
     voice.highPartial.stop();
+    if (voice.samplePlayer) {
+      if (voice.samplePlayer.state === 'started') {
+        try {
+          voice.samplePlayer.stop();
+        } catch (err) {
+          console.error('Failed to stop clarinet sample:', err);
+        }
+      }
+    }
 
     voice.detuneLfo.dispose();
     voice.autoFilter.dispose();
@@ -953,6 +1022,12 @@ function disposeDotVoice(dot) {
     voice.noise.dispose();
     voice.output.dispose();
     voice.reverbSend.dispose();
+    if (voice.samplePlayer) {
+      voice.samplePlayer.dispose();
+    }
+    if (voice.sampleGain) {
+      voice.sampleGain.dispose();
+    }
   }, releaseTail * 1000);
 
   dot.voice = null;
@@ -992,6 +1067,9 @@ function destroyDot(dot) {
   const index = dots.indexOf(dot);
   if (index > -1) {
     dots.splice(index, 1);
+  }
+  if (dots.length === 0) {
+    updateDescriptorReadouts(null);
   }
 }
 
@@ -1494,86 +1572,234 @@ renderer.domElement.addEventListener('mousemove', onMouseMove);
 renderer.domElement.addEventListener('mouseup', onMouseUp);
 
 const spectroCanvas = document.getElementById('spectrograph');
-const ctx = spectroCanvas.getContext('2d');
 const bufferLength = analyser.frequencyBinCount;
 const dataArray = new Uint8Array(bufferLength);
+const spectroRenderer = new THREE.WebGLRenderer({
+  canvas: spectroCanvas,
+  antialias: true,
+  alpha: true,
+  preserveDrawingBuffer: true
+});
 
-// Calculate frequency for each bin based on sample rate
-// Nyquist frequency = sample rate / 2
-const nyquistFreq = Tone.context.sampleRate / 2;
+const spectroPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+const spectroWidth = spectroCanvas.clientWidth || spectroCanvas.width;
+const spectroHeight = spectroCanvas.clientHeight || spectroCanvas.height;
+spectroRenderer.setPixelRatio(spectroPixelRatio);
+spectroRenderer.setSize(spectroWidth, spectroHeight, false);
+spectroRenderer.setClearColor(0x000000, 1);
+spectroRenderer.outputEncoding = THREE.sRGBEncoding;
+window.addEventListener('resize', () => {
+  const newWidth = spectroCanvas.clientWidth || spectroCanvas.width;
+  const newHeight = spectroCanvas.clientHeight || spectroCanvas.height;
+  spectroRenderer.setSize(newWidth, newHeight, false);
+  spectroCamera.aspect = newWidth / newHeight;
+  spectroCamera.updateProjectionMatrix();
+});
+
+const spectroScene = new THREE.Scene();
+
+const SPECTRO_FOV = 55;
+const SPECTRO_NEAR = 1;
+const SPECTRO_FAR = 100;
+const spectroCamera = new THREE.PerspectiveCamera(SPECTRO_FOV, spectroWidth / spectroHeight, SPECTRO_NEAR, SPECTRO_FAR);
+spectroCamera.position.set(0, 3.2, 6.8);
+spectroCamera.lookAt(0, 0.4, 0);
+
+const spectroAmbient = new THREE.AmbientLight(0xffffff, 0.35);
+spectroScene.add(spectroAmbient);
+const spectroKeyLight = new THREE.DirectionalLight(0xffffff, 0.6);
+spectroKeyLight.position.set(2.5, 3.2, 4.5);
+spectroScene.add(spectroKeyLight);
+
+const spectroGroup = new THREE.Group();
+spectroGroup.rotation.set(Math.PI / 2, 0, 0);
+spectroGroup.position.set(0, 0, -2.5);
+spectroScene.add(spectroGroup);
+
+const SPECTRO_BINS = 256;
+const SPECTRO_HISTORY = 256;
+const SPECTRO_GEOMETRY_SIZE = 9.5;
+const SPECTRO_VERTICAL_SCALE = SPECTRO_GEOMETRY_SIZE / 3.5;
+const SPECTRO_BACKGROUND_RGB = { r: 0.0, g: 0.0, b: 0.0 };
+const spectroDataHistory = new Float32Array(SPECTRO_BINS * SPECTRO_HISTORY);
+const spectroSmoothing = new Float32Array(SPECTRO_BINS);
+
+function seedSpectroHistory() {
+  for (let x = 0; x < SPECTRO_HISTORY; x++) {
+    for (let y = 0; y < SPECTRO_BINS; y++) {
+      spectroDataHistory[x * SPECTRO_BINS + y] = 0;
+    }
+  }
+}
+seedSpectroHistory();
+
+const SPECTRO_TIME_SPAN = SPECTRO_GEOMETRY_SIZE;
+const SPECTRO_FREQ_SPAN = SPECTRO_GEOMETRY_SIZE;
+const spectroVertexCount = SPECTRO_HISTORY * SPECTRO_BINS;
+const spectroPositionsArray = new Float32Array(spectroVertexCount * 3);
+const spectroColorsArray = new Float32Array(spectroVertexCount * 3);
+const spectroIndices = new Uint16Array((SPECTRO_HISTORY - 1) * (SPECTRO_BINS - 1) * 6);
+
+for (let x = 0; x < SPECTRO_HISTORY; x++) {
+  const xPos = SPECTRO_GEOMETRY_SIZE * (0.5 - (x / Math.max(1, SPECTRO_HISTORY - 1)));
+  for (let y = 0; y < SPECTRO_BINS; y++) {
+    const zPos = SPECTRO_GEOMETRY_SIZE * (0.5 - (y / Math.max(1, SPECTRO_BINS - 1)));
+    const vertIndex = (x * SPECTRO_BINS + y) * 3;
+    spectroPositionsArray[vertIndex] = xPos;
+    spectroPositionsArray[vertIndex + 1] = 0;
+    spectroPositionsArray[vertIndex + 2] = zPos;
+  }
+}
+
+let indexWrite = 0;
+for (let x = 0; x < SPECTRO_HISTORY - 1; x++) {
+  for (let y = 0; y < SPECTRO_BINS - 1; y++) {
+    const a = x * SPECTRO_BINS + y;
+    const b = (x + 1) * SPECTRO_BINS + y;
+    const c = (x + 1) * SPECTRO_BINS + (y + 1);
+    const d = x * SPECTRO_BINS + (y + 1);
+    spectroIndices[indexWrite++] = a;
+    spectroIndices[indexWrite++] = b;
+    spectroIndices[indexWrite++] = d;
+    spectroIndices[indexWrite++] = b;
+    spectroIndices[indexWrite++] = c;
+    spectroIndices[indexWrite++] = d;
+  }
+}
+
+const spectroGeometry = new THREE.BufferGeometry();
+spectroGeometry.setAttribute('position', new THREE.BufferAttribute(spectroPositionsArray, 3));
+spectroGeometry.setAttribute('color', new THREE.BufferAttribute(spectroColorsArray, 3));
+spectroGeometry.setIndex(new THREE.BufferAttribute(spectroIndices, 1));
+spectroGeometry.computeVertexNormals();
+
+const spectroMaterial = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  side: THREE.FrontSide,
+  roughness: 0.42,
+  metalness: 0.0,
+  emissive: new THREE.Color(0x000000),
+  emissiveIntensity: 0.0
+});
+
+const spectroMesh = new THREE.Mesh(spectroGeometry, spectroMaterial);
+spectroMesh.position.y = 0;
+spectroGroup.add(spectroMesh);
+const spectroTempColorOut = new THREE.Color();
+
+const descriptorReadouts = {
+  centroid: document.getElementById('readout-centroid'),
+  noisiness: document.getElementById('readout-noisiness'),
+  inharm: document.getElementById('readout-inharm')
+};
+
+function updateDescriptorReadouts(values) {
+  if (!descriptorReadouts.centroid) {
+    return;
+  }
+  if (!values) {
+    descriptorReadouts.centroid.textContent = '--';
+    descriptorReadouts.noisiness.textContent = '--';
+    descriptorReadouts.inharm.textContent = '--';
+    return;
+  }
+  descriptorReadouts.centroid.textContent = values.centroid.toFixed(2);
+  descriptorReadouts.noisiness.textContent = values.noisiness.toFixed(2);
+  descriptorReadouts.inharm.textContent = values.inharm.toFixed(2);
+}
+
+let vrUIPanel = null;
+let vrSpectrographPlane = null;
+let vrSpectrographTexture = null;
+
+function sampleSpectroColor(amplitude) {
+  const clamped = THREE.MathUtils.clamp(amplitude, 0, 1);
+  const hue = (360 - (clamped * 360)) % 360;
+  const chroma = 1.0;
+  const hueDash = hue / 60;
+  const x = chroma * (1 - Math.abs((hueDash % 2) - 1));
+  let r = 0;
+  let g = 0;
+  let b = 0;
+
+  if (hueDash < 1) {
+    r = chroma;
+    g = x;
+  } else if (hueDash < 2) {
+    r = x;
+    g = chroma;
+  } else if (hueDash < 3) {
+    g = chroma;
+    b = x;
+  } else if (hueDash < 4) {
+    g = x;
+    b = chroma;
+  } else if (hueDash < 5) {
+    r = x;
+    b = chroma;
+  } else {
+    r = chroma;
+    b = x;
+  }
+
+  spectroTempColorOut.setRGB(
+    THREE.MathUtils.clamp(SPECTRO_BACKGROUND_RGB.r + clamped * r, 0, 1),
+    THREE.MathUtils.clamp(SPECTRO_BACKGROUND_RGB.g + clamped * g, 0, 1),
+    THREE.MathUtils.clamp(SPECTRO_BACKGROUND_RGB.b + clamped * b, 0, 1)
+  );
+
+  return spectroTempColorOut;
+}
+
+function updateSpectrographMesh() {
+  spectroDataHistory.copyWithin(SPECTRO_BINS, 0);
+  const latestColumnOffset = 0;
+  for (let bin = 0; bin < SPECTRO_BINS; bin++) {
+    const freqRatio = bin / (SPECTRO_BINS - 1);
+    const freqCoord = Math.pow(256, freqRatio - 1);
+    const fftIndex = Math.min(bufferLength - 1, Math.round(freqCoord * (bufferLength - 1)));
+    const amplitude = (dataArray[fftIndex] || 0) / 255;
+    const smoothed = THREE.MathUtils.lerp(spectroSmoothing[bin] || 0, amplitude, 0.35);
+    spectroSmoothing[bin] = smoothed;
+    spectroDataHistory[latestColumnOffset + bin] = smoothed;
+  }
+
+  const positionAttribute = spectroGeometry.getAttribute('position');
+  const colorAttribute = spectroGeometry.getAttribute('color');
+  const positionsArray = positionAttribute.array;
+  const colorArray = colorAttribute.array;
+  for (let x = 0; x < SPECTRO_HISTORY; x++) {
+    const columnOffset = x * SPECTRO_BINS;
+    const timeRatio = x / (SPECTRO_HISTORY - 1);
+    const fade = Math.pow(Math.cos(timeRatio * 0.5 * Math.PI), 0.5);
+    for (let y = 0; y < SPECTRO_BINS; y++) {
+      const dataIndex = columnOffset + y;
+      const vertexIndex = dataIndex * 3;
+      const amplitude = Math.max(0, spectroDataHistory[dataIndex]) * fade;
+      positionsArray[vertexIndex + 1] = amplitude * SPECTRO_VERTICAL_SCALE;
+      const color = sampleSpectroColor(amplitude);
+      colorArray[vertexIndex] = color.r;
+      colorArray[vertexIndex + 1] = color.g;
+      colorArray[vertexIndex + 2] = color.b;
+    }
+  }
+  positionAttribute.needsUpdate = true;
+  colorAttribute.needsUpdate = true;
+  spectroGeometry.computeVertexNormals();
+}
 
 function drawSpectrograph() {
   requestAnimationFrame(drawSpectrograph);
   analyser.getByteFrequencyData(dataArray);
-
-  const maxFreq = 8000; // Maximum frequency to display
-  const labelHeight = 18;
-  const barMaxHeight = spectroCanvas.height - labelHeight;
-
-  // Fill background
-  ctx.fillStyle = '#333333';
-  ctx.fillRect(0, 0, spectroCanvas.width, spectroCanvas.height);
-
-  const minFreq = 20;
-  const logMin = Math.log10(minFreq);
-  const logMax = Math.log10(maxFreq);
-  const minDb = -60;
-
-  // Draw frequency bars first using logarithmic spacing
-  for (let i = 0; i < bufferLength; i++) {
-    const freq = (i / bufferLength) * nyquistFreq;
-    if (freq < minFreq) continue;
-    if (freq > maxFreq) break;
-
-    const clampedFreq = Math.max(freq, minFreq);
-    const logPos = (Math.log10(clampedFreq) - logMin) / (logMax - logMin);
-    const xPos = logPos * spectroCanvas.width;
-
-    const nextFreqRaw = ((i + 1) / bufferLength) * nyquistFreq;
-    const clampedNextFreq = Math.min(Math.max(nextFreqRaw, minFreq), maxFreq);
-    const nextLogPos = (Math.log10(clampedNextFreq) - logMin) / (logMax - logMin);
-    const nextX = nextLogPos * spectroCanvas.width;
-    const barWidth = Math.max(1, nextX - xPos);
-
-    const magnitude = dataArray[i] / 255;
-    const db = 20 * Math.log10(magnitude > 0 ? magnitude : 1e-4);
-    const normalizedDb = Math.min(1, Math.max(0, (db - minDb) / (0 - minDb)));
-    const barHeight = normalizedDb * barMaxHeight;
-
-    const hue = (Math.log10(clampedFreq) - logMin) / (logMax - logMin) * 240;
-    ctx.fillStyle = `hsl(${240 - hue}, 100%, 50%)`;
-
-    ctx.fillRect(xPos, barMaxHeight - barHeight, barWidth, barHeight);
+  updateSpectrographMesh();
+  spectroRenderer.render(spectroScene, spectroCamera);
+  if (vrSpectrographTexture) {
+    vrSpectrographTexture.needsUpdate = true;
   }
-  
-  // Draw separator line
-  ctx.strokeStyle = '#555';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, barMaxHeight);
-  ctx.lineTo(spectroCanvas.width, barMaxHeight);
-  ctx.stroke();
-
-  // Draw frequency labels at the bottom
-  ctx.fillStyle = '#aaa';
-  ctx.font = '11px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  
-  const labels = ['0', '1k', '2k', '4k', '8k'];
-  const frequencies = [0, 1000, 2000, 4000, 8000];
-  
-  labels.forEach((label, i) => {
-    const xPos = (frequencies[i] / maxFreq) * spectroCanvas.width;
-    ctx.fillText(label, xPos, barMaxHeight + 2);
-  });
 }
 drawSpectrograph();
 
 // --- ANIMATION LOOP ---
-let vrUIPanel = null;
-let vrSpectrographPlane = null;
-let vrSpectrographTexture = null;
 
 function createVRUI() {
   if (vrUIPanel) return; // Already created
@@ -1624,7 +1850,10 @@ function createVRUI() {
   vrUIPanel = panelGroup;
   
   // Create floating spectrograph - will be positioned behind cube in animate loop
-  vrSpectrographTexture = new THREE.CanvasTexture(spectroCanvas);
+  vrSpectrographTexture = new THREE.CanvasTexture(spectroRenderer.domElement);
+  vrSpectrographTexture.minFilter = THREE.LinearFilter;
+  vrSpectrographTexture.magFilter = THREE.LinearFilter;
+  vrSpectrographTexture.encoding = THREE.sRGBEncoding;
   const spectroMaterial = new THREE.MeshBasicMaterial({ 
     map: vrSpectrographTexture,
     side: THREE.DoubleSide,

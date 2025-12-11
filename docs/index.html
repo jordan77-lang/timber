@@ -26,7 +26,12 @@
     
     <div class="spectro-section">
       <h3>Spectrograph</h3>
-      <canvas id="spectrograph" width="300" height="200"></canvas>
+      <canvas id="spectrograph" width="360" height="240"></canvas>
+      <div class="spectro-readouts">
+        <div>Centroid: <span id="readout-centroid">--</span></div>
+        <div>Noisiness: <span id="readout-noisiness">--</span></div>
+        <div>Inharmonicity: <span id="readout-inharm">--</span></div>
+      </div>
       <div class="button-container">
         <button id="place-marker">Place Marker</button>
         <button id="clear">Clear</button>
