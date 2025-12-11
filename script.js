@@ -230,7 +230,7 @@ cubeGroup.add(hoverMarker);
 function normalizeTimbreCoords(point) {
   const halfSize = cubeSize / 2;
   const normalizedX = (point.x + halfSize) / cubeSize;
-  const normalizedY = 1 - ((point.y + halfSize) / cubeSize);
+  const normalizedY = (point.y + halfSize) / cubeSize;
   const normalizedZ = (point.z + halfSize) / cubeSize;
 
   return {
@@ -805,19 +805,19 @@ function createDotVoice(dot) {
 
   const fundamental = new Tone.Oscillator({
     type: 'sine',
-    frequency: 220
+    frequency: 1200
   }).connect(fundamentalGain);
 
   const lowPartial = new Tone.Oscillator({
     type: 'custom',
     partials: [0, 1, 0.65, 0.35, 0.2],
-    frequency: 220
+    frequency: 1200
   }).connect(lowGain);
 
   const highPartial = new Tone.Oscillator({
     type: 'custom',
     partials: [0, 0, 0, 0.8, 0.6, 0.4, 0.25, 0.18],
-    frequency: 220
+    frequency: 1200
   }).connect(highGain);
 
   const noise = new Tone.Noise('pink');
@@ -872,50 +872,53 @@ function updateDotAudio(dot) {
   }
 
   const voice = dot.voice;
-  const spectralFlux = THREE.MathUtils.clamp(dot.x, 0, 1);
-  const brightness = THREE.MathUtils.clamp(dot.y, 0, 1);
-  const transient = THREE.MathUtils.clamp(dot.z, 0, 1);
+  const inharmonicity = THREE.MathUtils.clamp(dot.x, 0, 1);
+  const spectralCentroid = THREE.MathUtils.clamp(dot.y, 0, 1);
+  const noisyness = THREE.MathUtils.clamp(dot.z, 0, 1);
 
-  const baseFrequency = 60 + brightness * 1800;
-  voice.fundamental.frequency.rampTo(baseFrequency, 0.1);
-  voice.lowPartial.frequency.rampTo(baseFrequency, 0.1);
-  voice.highPartial.frequency.rampTo(baseFrequency, 0.1);
+  // Map spectral centroid (Y axis) to perceived brightness / base frequency
+  const minFrequency = 400;
+  const maxFrequency = 2000;
+  const baseFrequency = minFrequency + spectralCentroid * (maxFrequency - minFrequency);
+  voice.fundamental.frequency.rampTo(baseFrequency, 0.08);
+  voice.lowPartial.frequency.rampTo(baseFrequency, 0.08);
+  voice.highPartial.frequency.rampTo(baseFrequency, 0.08);
 
-  let t1 = 1 - brightness * 0.7;
-  let t2 = 0.25 + brightness * 0.4;
-  let t3 = 0.15 + brightness * 0.9 + transient * 0.2;
-  t1 = THREE.MathUtils.clamp(t1, 0.1, 1);
-  t2 = THREE.MathUtils.clamp(t2, 0.05, 1);
-  t3 = THREE.MathUtils.clamp(t3, 0.05, 1);
-  const tristimulusSum = t1 + t2 + t3;
-  const overallGain = 0.45 + (1 - transient) * 0.25;
-  voice.fundamentalGain.gain.rampTo((t1 / tristimulusSum) * overallGain, 0.12);
-  voice.lowGain.gain.rampTo((t2 / tristimulusSum) * overallGain, 0.12);
-  voice.highGain.gain.rampTo((t3 / tristimulusSum) * overallGain, 0.12);
+  // Blend harmonic weights using inharmonicity (X axis)
+  const fundamentalWeight = THREE.MathUtils.lerp(0.65, 0.25, inharmonicity);
+  const lowWeight = THREE.MathUtils.lerp(0.25, 0.35, inharmonicity);
+  const highWeight = THREE.MathUtils.lerp(0.10, 0.40, inharmonicity);
+  const weightSum = fundamentalWeight + lowWeight + highWeight;
+  const overallGain = 0.5 + (1 - noisyness) * 0.2;
+  voice.fundamentalGain.gain.rampTo((fundamentalWeight / weightSum) * overallGain, 0.12);
+  voice.lowGain.gain.rampTo((lowWeight / weightSum) * overallGain, 0.12);
+  voice.highGain.gain.rampTo((highWeight / weightSum) * overallGain, 0.12);
 
-  const noiseAmount = transient;
-  voice.noiseGain.gain.rampTo(noiseAmount * 0.55, 0.1);
-  const minNoiseFreq = 500;
-  const maxNoiseFreq = 9000;
-  voice.noiseFilter.frequency.rampTo(minNoiseFreq + noiseAmount * (maxNoiseFreq - minNoiseFreq), 0.15);
-  voice.noiseFilter.Q.rampTo(0.6 + (1 - noiseAmount) * 2.6, 0.15);
-  voice.noise.type = noiseAmount > 0.55 ? 'white' : 'pink';
+  // Map noisyness (Z axis) to noise layer characteristics
+  const noiseGainTarget = 0.05 + noisyness * 0.55;
+  voice.noiseGain.gain.rampTo(noiseGainTarget, 0.12);
+  const noiseFilterFreq = 600 + noisyness * 6600;
+  voice.noiseFilter.frequency.rampTo(noiseFilterFreq, 0.18);
+  voice.noiseFilter.Q.rampTo(2.8 - noisyness * 2.2, 0.18);
+  voice.noise.type = noisyness > 0.55 ? 'white' : 'pink';
 
-  voice.autoFilter.frequency.rampTo(0.15 + spectralFlux * 7.5, 0.2);
-  voice.autoFilter.depth.rampTo(0.2 + spectralFlux * 0.75, 0.2);
-  voice.autoFilter.baseFrequency = 180 + brightness * 6500;
+  // Inharmonicity drives subtle vibrato/auto-filter movement
+  voice.autoFilter.frequency.rampTo(0.25 + inharmonicity * 5.5, 0.2);
+  voice.autoFilter.depth.rampTo(0.18 + noisyness * 0.45, 0.2);
+  voice.autoFilter.baseFrequency = 300 + spectralCentroid * 5200;
 
-  const detuneRange = 6 + spectralFlux * 48;
+  const detuneRange = 4 + inharmonicity * 36;
   voice.detuneLfo.min = -detuneRange;
   voice.detuneLfo.max = detuneRange;
-  voice.detuneLfo.frequency.rampTo(0.2 + spectralFlux * 4.5, 0.2);
+  voice.detuneLfo.frequency.rampTo(0.25 + inharmonicity * 3.5, 0.2);
 
-  voice.ampEnv.attack = 0.04 + transient * 0.25;
-  voice.ampEnv.decay = 0.12 + transient * 0.4;
-  voice.ampEnv.sustain = 0.45 + (1 - transient) * 0.35;
-  voice.ampEnv.release = 0.35 + transient * 1.6;
+  // Envelope responds mostly to noisyness (front/back)
+  voice.ampEnv.attack = 0.06 + (1 - noisyness) * 0.18;
+  voice.ampEnv.decay = 0.18 + (1 - noisyness) * 0.25;
+  voice.ampEnv.sustain = 0.5 + (1 - noisyness) * 0.25;
+  voice.ampEnv.release = 0.45 + noisyness * 1.3;
 
-  voice.reverbSend.gain.rampTo(0.08 + brightness * 0.15 + noiseAmount * 0.25, 0.2);
+  voice.reverbSend.gain.rampTo(0.1 + spectralCentroid * 0.12 + noisyness * 0.2, 0.2);
 }
 
 function disposeDotVoice(dot) {
