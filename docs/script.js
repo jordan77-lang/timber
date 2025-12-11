@@ -1217,6 +1217,17 @@ function onMouseMove(event) {
   }
 }
 
+function onMouseUp(event) {
+  // If the dragged dot was outside bounds when released, destroy it
+  if (draggedDot && draggedDotOutsideBounds) {
+    destroyDot(draggedDot);
+  }
+  
+  draggedDot = null;
+  draggedDotOutsideBounds = false;
+  draggingHandle = false;
+}
+
 function createHoverLines(point, isPermanent = false) {
   const group = new THREE.Group();
   const lineColor = 0xffff00;
