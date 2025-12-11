@@ -234,6 +234,12 @@ invisibleCube = new THREE.Mesh(invisibleGeometry, invisibleMaterial);
 invisibleCube.userData.isInvisibleBoundingBox = true;
 cubeGroup.add(invisibleCube);
 
+// Add visible wireframe edges to show cube bounds
+const wireframeGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize));
+const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0x00ff88, opacity: 0.3, transparent: true });
+const wireframeBox = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+cubeGroup.add(wireframeBox);
+
 // Load the GLB model
 const loader = new THREE.GLTFLoader();
 loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
