@@ -1219,19 +1219,6 @@ function onMouseMove(event) {
     return; // Don't show hover lines while dragging (permanent crosshairs are shown)
   }
   
-  raycaster.setFromCamera(mouse, camera);
-  const intersectPoint = getIntersectionPoint(raycaster);
-  
-  // Update hover visualization
-  if (hoverLines) {
-    cubeGroup.remove(hoverLines);
-    hoverLines = null;
-  }
-  
-  if (intersectPoint) {
-    hoverLines = createHoverLines(intersectPoint);
-    cubeGroup.add(hoverLines);
-  }
 }
 
 function onMouseUp(event) {
@@ -1937,26 +1924,16 @@ function animate() {
     }
   } else {
     // --- DESKTOP MOUSE HOVER LOGIC ---
-    if (!draggedDot && !draggingHandle) {
-      raycaster.setFromCamera(mouse, camera);
-      const intersectPoint = getIntersectionPoint(raycaster);
-      
-      if (hoverLines) {
-        cubeGroup.remove(hoverLines);
-        hoverLines = null;
-      }
-      
-      if (intersectPoint) {
-        hoverLines = createHoverLines(intersectPoint);
-        cubeGroup.add(hoverLines);
-        if (hoverMarker) {
-          hoverMarker.position.copy(intersectPoint);
-          hoverMarker.visible = true;
-        }
-      } else if (hoverMarker) {
-        hoverMarker.visible = false;
-      }
-    } else if (hoverMarker) {
+    if (hoverLines) {
+      hoverLines.traverse(child => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+      cubeGroup.remove(hoverLines);
+      hoverLines = null;
+    }
+
+    if (hoverMarker) {
       hoverMarker.visible = false;
     }
   }
