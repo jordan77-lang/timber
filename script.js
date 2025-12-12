@@ -757,12 +757,77 @@ const reverb = new Tone.Reverb({
 reverb.connect(mixBus);
 
 const clarinetSampleUrl = 'clarinet_G.wav';
-const clarinetTemplatePlayer = new Tone.Player({
-  url: clarinetSampleUrl,
-  loop: true,
-  autostart: false
-});
-const clarinetSampleLoaded = clarinetTemplatePlayer.loaded;
+let clarinetSampleBuffer = null;
+let clarinetLoopPoints = null;
+const clarinetSampleReady = Tone.ToneAudioBuffer.fromUrl(clarinetSampleUrl)
+  .then((buffer) => {
+    clarinetSampleBuffer = buffer;
+    if (!clarinetLoopPoints) {
+      clarinetLoopPoints = calculateLoopPoints(buffer);
+    }
+    return buffer;
+  })
+  .catch((err) => {
+    console.error('Clarinet sample failed to load:', err);
+    throw err;
+  });
+
+function findZeroCrossing(data, startIndex, endIndex, forward = true) {
+  const stepStart = forward ? Math.max(1, startIndex + 1) : Math.min(data.length - 2, endIndex - 1);
+  const stepEnd = forward ? Math.min(endIndex, data.length - 1) : Math.max(startIndex, 1);
+  if (forward) {
+    for (let i = stepStart; i <= stepEnd; i++) {
+      const prev = data[i - 1];
+      const curr = data[i];
+      if ((prev <= 0 && curr >= 0) || (prev >= 0 && curr <= 0)) {
+        return i;
+      }
+    }
+    return Math.min(endIndex, data.length - 1);
+  }
+  for (let i = stepStart; i >= stepEnd; i--) {
+    const next = data[i + 1];
+    const curr = data[i];
+    if ((curr <= 0 && next >= 0) || (curr >= 0 && next <= 0)) {
+      return i;
+    }
+  }
+  return Math.max(startIndex, 0);
+}
+
+function calculateLoopPoints(buffer) {
+  if (!buffer) {
+    return null;
+  }
+  const channelCount = buffer.numberOfChannels;
+  const firstChannel = channelCount > 0 ? buffer.getChannelData(0) : null;
+  if (!firstChannel || firstChannel.length === 0) {
+    return { start: 0, end: buffer.duration };
+  }
+
+  const sampleRate = buffer.sampleRate;
+  const totalSamples = firstChannel.length;
+  const headSearch = Math.min(totalSamples - 1, Math.floor(sampleRate * 0.08));
+  const tailSearch = Math.min(totalSamples - 1, Math.floor(sampleRate * 0.12));
+
+  const startIndex = findZeroCrossing(firstChannel, 0, headSearch, true);
+  const minEndIndex = Math.min(totalSamples - 1, startIndex + Math.floor(sampleRate * 0.3));
+  const tailStart = Math.max(minEndIndex, totalSamples - tailSearch - 1);
+  const endIndex = findZeroCrossing(firstChannel, tailStart, totalSamples - 2, false);
+
+  let finalStart = Math.max(0, startIndex - Math.floor(sampleRate * 0.002));
+  let finalEnd = Math.max(endIndex, finalStart + Math.floor(sampleRate * 0.25));
+  if (finalEnd >= totalSamples) {
+    finalEnd = totalSamples - 1;
+  }
+
+  const startTime = finalStart / sampleRate;
+  const endTime = Math.min(buffer.duration, finalEnd / sampleRate);
+  if (endTime <= startTime + 0.01) {
+    return { start: 0, end: buffer.duration };
+  }
+  return { start: startTime, end: endTime };
+}
 
 let audioReadyPromise = null;
 async function ensureAudioStarted() {
@@ -778,7 +843,7 @@ async function ensureAudioStarted() {
   }
   await audioReadyPromise;
   try {
-    await clarinetSampleLoaded;
+    await clarinetSampleReady;
   } catch (err) {
     console.error('Failed to load clarinet sample:', err);
   }
@@ -812,66 +877,30 @@ function createDotVoice(dot) {
   }).connect(ampEnv);
   autoFilter.start();
 
-  let sampleGain = null;
+  const sampleGain = new Tone.Gain(0);
   let samplePlayer = null;
-  if (clarinetTemplatePlayer.buffer && clarinetTemplatePlayer.buffer.loaded) {
-    sampleGain = new Tone.Gain(0.45).connect(autoFilter);
-    samplePlayer = new Tone.Player({
-      buffer: clarinetTemplatePlayer.buffer,
-      loop: true,
-      fadeIn: 0.02,
-      fadeOut: 0.08,
-      autostart: false
-    }).connect(sampleGain);
-  }
 
-  const fundamentalGain = new Tone.Gain(0.25).connect(autoFilter);
-  const lowGain = new Tone.Gain(0.25).connect(autoFilter);
-  const highGain = new Tone.Gain(0.25).connect(autoFilter);
-
-  const fundamental = new Tone.Oscillator({
-    type: 'sine',
-    frequency: 1200
-  }).connect(fundamentalGain);
-
-  const lowPartial = new Tone.Oscillator({
-    type: 'custom',
-    partials: [0, 1, 0.65, 0.35, 0.2],
-    frequency: 1200
-  }).connect(lowGain);
-
-  const highPartial = new Tone.Oscillator({
-    type: 'custom',
-    partials: [0, 0, 0, 0.8, 0.6, 0.4, 0.25, 0.18],
-    frequency: 1200
-  }).connect(highGain);
-
-  const noise = new Tone.Noise('pink');
-  const noiseFilter = new Tone.Filter({
-    type: 'bandpass',
-    frequency: 1200,
-    Q: 1.2
+  const vibrato = new Tone.Vibrato({
+    frequency: 5,
+    depth: 0,
+    wet: 1
   });
-  const noiseGain = new Tone.Gain(0);
-  noise.connect(noiseFilter);
-  noiseFilter.connect(noiseGain);
-  noiseGain.connect(autoFilter);
 
-  const detuneLfo = new Tone.LFO({
-    frequency: 0.4,
-    min: -5,
-    max: 5,
-    type: 'sine'
+  const colorFilter = new Tone.Filter({
+    type: 'lowpass',
+    frequency: 9000,
+    Q: 0.6
   });
-  detuneLfo.connect(fundamental.detune);
-  detuneLfo.connect(lowPartial.detune);
-  detuneLfo.connect(highPartial.detune);
 
-  fundamental.start();
-  lowPartial.start();
-  highPartial.start();
-  noise.start();
-  detuneLfo.start();
+  const textureCrusher = new Tone.BitCrusher({
+    bits: 12,
+    wet: 0
+  });
+
+  sampleGain.connect(vibrato);
+  vibrato.connect(colorFilter);
+  colorFilter.connect(textureCrusher);
+  textureCrusher.connect(autoFilter);
 
   const voice = {
     output,
@@ -880,36 +909,51 @@ function createDotVoice(dot) {
     autoFilter,
     samplePlayer,
     sampleGain,
-    fundamentalGain,
-    lowGain,
-    highGain,
-    fundamental,
-    lowPartial,
-    highPartial,
-    noise,
-    noiseGain,
-    noiseFilter,
-    detuneLfo,
+    vibrato,
+    colorFilter,
+    textureCrusher,
     disposing: false
   };
   dot.voice = voice;
 
-  if (samplePlayer) {
-    samplePlayer.loaded
-      .then(() => {
-        if (voice.disposing) {
-          return;
-        }
-        try {
-          samplePlayer.start();
-        } catch (err) {
-          console.error('Failed to start clarinet sample:', err);
-        }
-      })
-      .catch(err => {
-        console.error('Clarinet sample player failed to load:', err);
-      });
-  }
+  clarinetSampleReady
+    .then((buffer) => {
+      if (voice.disposing) {
+        return;
+      }
+      if (!buffer || !buffer.loaded) {
+        console.warn('Clarinet sample buffer missing after load');
+        return;
+      }
+      const player = new Tone.Player({
+        loop: true,
+        fadeIn: 0.02,
+        fadeOut: 0.08,
+        autostart: false
+      }).connect(sampleGain);
+      player.buffer = buffer;
+      if (clarinetLoopPoints) {
+        player.loopStart = clarinetLoopPoints.start;
+        player.loopEnd = clarinetLoopPoints.end;
+      }
+      player.fadeIn = 0.035;
+      player.fadeOut = 0.045;
+      voice.samplePlayer = player;
+      samplePlayer = player;
+      try {
+        const loopOffset = clarinetLoopPoints ? clarinetLoopPoints.start : 0;
+        player.start(undefined, loopOffset);
+      } catch (err) {
+        console.error('Failed to start clarinet sample:', err);
+        player.dispose();
+        voice.samplePlayer = null;
+        return;
+      }
+      updateDotAudio(dot);
+    })
+    .catch(err => {
+      console.error('Clarinet sample player failed to load:', err);
+    });
 }
 
 function updateDotAudio(dot) {
@@ -922,58 +966,46 @@ function updateDotAudio(dot) {
   const spectralCentroid = THREE.MathUtils.clamp(dot.y, 0, 1);
   const noisyness = THREE.MathUtils.clamp(dot.z, 0, 1);
 
-  // Map spectral centroid (Y axis) to perceived brightness / base frequency
-  const minFrequency = 400;
-  const maxFrequency = 2000;
-  const baseFrequency = minFrequency + spectralCentroid * (maxFrequency - minFrequency);
-  voice.fundamental.frequency.rampTo(baseFrequency, 0.08);
-  voice.lowPartial.frequency.rampTo(baseFrequency, 0.08);
-  voice.highPartial.frequency.rampTo(baseFrequency, 0.08);
+  const deltaInharm = THREE.MathUtils.clamp((inharmonicity - 0.5) / 0.5, -1, 1);
+  const deltaCentroid = THREE.MathUtils.clamp((spectralCentroid - 0.5) / 0.5, -1, 1);
+  const deltaNoise = THREE.MathUtils.clamp((noisyness - 0.5) / 0.5, -1, 1);
+  const clarinetReference = 1200;
 
-  // Blend harmonic weights using inharmonicity (X axis)
-  const fundamentalWeight = THREE.MathUtils.lerp(0.65, 0.25, inharmonicity);
-  const lowWeight = THREE.MathUtils.lerp(0.25, 0.35, inharmonicity);
-  const highWeight = THREE.MathUtils.lerp(0.10, 0.40, inharmonicity);
-  const weightSum = fundamentalWeight + lowWeight + highWeight;
-  const overallGain = 0.5 + (1 - noisyness) * 0.2;
-  const sampleWeight = THREE.MathUtils.lerp(0.55, 0.3, noisyness);
-  const harmonicWeight = Math.max(0.0001, 1 - sampleWeight);
+  const noiseAmount = Math.max(0, deltaNoise);
+  const clarityAmount = Math.max(0, -deltaNoise);
+
   if (voice.sampleGain) {
-    voice.sampleGain.gain.rampTo(overallGain * sampleWeight, 0.12);
+    const gainTarget = THREE.MathUtils.clamp(1 - noiseAmount * 0.18 + clarityAmount * 0.08, 0.72, 1.05);
+    voice.sampleGain.gain.rampTo(gainTarget, 0.12);
   }
-  voice.fundamentalGain.gain.rampTo((fundamentalWeight / weightSum) * overallGain * harmonicWeight, 0.12);
-  voice.lowGain.gain.rampTo((lowWeight / weightSum) * overallGain * harmonicWeight, 0.12);
-  voice.highGain.gain.rampTo((highWeight / weightSum) * overallGain * harmonicWeight, 0.12);
+
   if (voice.samplePlayer) {
-    const clarinetReference = 1200;
-    voice.samplePlayer.playbackRate = baseFrequency / clarinetReference;
+    const rate = THREE.MathUtils.clamp(1 + deltaInharm * 0.035, 0.88, 1.12);
+    voice.samplePlayer.playbackRate = rate;
   }
 
-  // Map noisyness (Z axis) to noise layer characteristics
-  const noiseGainTarget = 0.05 + noisyness * 0.55;
-  voice.noiseGain.gain.rampTo(noiseGainTarget, 0.12);
-  const noiseFilterFreq = 600 + noisyness * 6600;
-  voice.noiseFilter.frequency.rampTo(noiseFilterFreq, 0.18);
-  voice.noiseFilter.Q.rampTo(2.8 - noisyness * 2.2, 0.18);
-  voice.noise.type = noisyness > 0.55 ? 'white' : 'pink';
+  const brightnessFactor = THREE.MathUtils.clamp(0.5 + deltaCentroid * 0.5, 0, 1);
+  const colorFreq = THREE.MathUtils.lerp(3200, 16000, brightnessFactor);
+  voice.colorFilter.frequency.rampTo(colorFreq, 0.12);
+  voice.colorFilter.Q = THREE.MathUtils.clamp(1 + (brightnessFactor - 0.5) * 1.6, 0.4, 2.4);
 
-  // Inharmonicity drives subtle vibrato/auto-filter movement
-  voice.autoFilter.frequency.rampTo(0.25 + inharmonicity * 5.5, 0.2);
-  voice.autoFilter.depth.rampTo(0.18 + noisyness * 0.45, 0.2);
-  voice.autoFilter.baseFrequency = 300 + spectralCentroid * 5200;
+  voice.vibrato.depth = Math.abs(deltaInharm) * 0.45;
+  voice.vibrato.frequency = 4 + Math.abs(deltaInharm) * 6;
 
-  const detuneRange = 4 + inharmonicity * 36;
-  voice.detuneLfo.min = -detuneRange;
-  voice.detuneLfo.max = detuneRange;
-  voice.detuneLfo.frequency.rampTo(0.25 + inharmonicity * 3.5, 0.2);
+  voice.textureCrusher.wet.value = noiseAmount;
+  voice.textureCrusher.bits = Math.round(THREE.MathUtils.clamp(12 - noiseAmount * 9, 4, 12));
 
-  // Envelope responds mostly to noisyness (front/back)
-  voice.ampEnv.attack = 0.06 + (1 - noisyness) * 0.18;
-  voice.ampEnv.decay = 0.18 + (1 - noisyness) * 0.25;
-  voice.ampEnv.sustain = 0.5 + (1 - noisyness) * 0.25;
-  voice.ampEnv.release = 0.45 + noisyness * 1.3;
+  voice.autoFilter.frequency.rampTo(0.35 + Math.abs(deltaInharm) * 5.5, 0.2);
+  voice.autoFilter.depth.rampTo(0.02 + noiseAmount * 0.5, 0.2);
+  voice.autoFilter.baseFrequency = 320 + THREE.MathUtils.clamp(clarinetReference * (0.18 + brightnessFactor * 0.62), 320, 6200);
+  voice.autoFilter.octaves = THREE.MathUtils.lerp(1.1, 3.4, brightnessFactor);
 
-  voice.reverbSend.gain.rampTo(0.1 + spectralCentroid * 0.12 + noisyness * 0.2, 0.2);
+  voice.ampEnv.attack = 0.09 + clarityAmount * 0.16;
+  voice.ampEnv.decay = 0.24 + clarityAmount * 0.22;
+  voice.ampEnv.sustain = 0.55 + clarityAmount * 0.35;
+  voice.ampEnv.release = 0.48 + Math.abs(deltaNoise) * 1.25;
+
+  voice.reverbSend.gain.rampTo(0.12 + brightnessFactor * 0.2 + noiseAmount * 0.28, 0.2);
   updateDescriptorReadouts({
     centroid: spectralCentroid,
     noisiness: noisyness,
@@ -993,11 +1025,6 @@ function disposeDotVoice(dot) {
 
   setTimeout(() => {
     voice.autoFilter.stop();
-    voice.detuneLfo.stop();
-    voice.noise.stop();
-    voice.fundamental.stop();
-    voice.lowPartial.stop();
-    voice.highPartial.stop();
     if (voice.samplePlayer) {
       if (voice.samplePlayer.state === 'started') {
         try {
@@ -1007,19 +1034,11 @@ function disposeDotVoice(dot) {
         }
       }
     }
-
-    voice.detuneLfo.dispose();
     voice.autoFilter.dispose();
     voice.ampEnv.dispose();
-    voice.fundamentalGain.dispose();
-    voice.lowGain.dispose();
-    voice.highGain.dispose();
-    voice.fundamental.dispose();
-    voice.lowPartial.dispose();
-    voice.highPartial.dispose();
-    voice.noiseGain.dispose();
-    voice.noiseFilter.dispose();
-    voice.noise.dispose();
+    voice.vibrato.dispose();
+    voice.colorFilter.dispose();
+    voice.textureCrusher.dispose();
     voice.output.dispose();
     voice.reverbSend.dispose();
     if (voice.samplePlayer) {
