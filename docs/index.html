@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timbre Box Experiment</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Tone.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.js"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- GLTFLoader for loading .glb models -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- VRButton helper -->
+  <script src="https://unpkg.com/three@0.128.0/examples/js/webxr/VRButton.js"></script>
+</head>
+<body>
+  <h1>Timbre Box</h1>
+  <p id="info">Press Place Marker to spawn the cube at the center, then drag it to explore the timbre space. In VR, use controllers or hand tracking.</p>
+  <div id="vr-button-container"></div>
+  
+  <div class="main-container">
+    <div id="container">
+    </div>
+    
+    <div class="spectro-section">
+      <canvas id="spectrograph" width="600" height="500"></canvas>
+      <div class="spectro-readouts">
+        <div>Centroid: <span id="readout-centroid">--</span></div>
+        <div>Noisiness: <span id="readout-noisiness">--</span></div>
+        <div>Inharmonicity: <span id="readout-inharm">--</span></div>
+      </div>
+      <div class="button-container">
+        <button id="place-marker">Place Marker</button>
+        <button id="clear">Clear</button>
+        <button id="download">Download</button>
+        <button id="reset-position">Reset Position</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="script.js"></script>
+</body>
+</html>
