@@ -74,7 +74,7 @@ h1 {
 
 .main-container {
   display: flex;
-  gap: 40px;
+  gap: 24px;
   justify-content: center;
   align-items: flex-start;
   margin: 30px auto;
@@ -84,10 +84,11 @@ h1 {
 .spectro-section {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 16px;
   margin-top: 40px;
   flex-shrink: 0;
+  width: min(55vw, 800px);
 }
 
 .spectro-section h3 {
@@ -100,11 +101,13 @@ h1 {
 
 #spectrograph {
   display: block;
-  width: min(70vw, 840px);
-  height: calc(min(70vw, 840px) * 0.56);
+  width: 100%;
+  max-width: 800px;
+  aspect-ratio: 6 / 5;
+  height: auto;
   border: none;
-  background: transparent;
-  image-rendering: pixelated;
+  background: #000;
+  border-radius: 8px;
 }
 
 .spectro-readouts {
@@ -123,6 +126,8 @@ h1 {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 button:hover {

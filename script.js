@@ -314,6 +314,15 @@ function createFace(position, rotation, color, label, normalVector) {
     clearcoatRoughness: 0.2,
     side: THREE.DoubleSide
   });
+  if (Math.abs(normalVector.z + 1) < 0.001) {
+    material.opacity = 0.04;
+    material.transmission = 0;
+    material.depthWrite = false;
+  } else if (Math.abs(normalVector.y + 1) < 0.001) {
+    material.opacity = 0.18;
+    material.transmission = 0.18;
+    material.depthWrite = false;
+  }
   const face = new THREE.Mesh(geometry, material);
   face.position.copy(position);
   face.rotation.setFromVector3(rotation);
@@ -322,7 +331,7 @@ function createFace(position, rotation, color, label, normalVector) {
   face.receiveShadow = true;
   cubeGroup.add(face);
   faces.push(face);
-  
+
   // Add glowing edge lines to the face
   const edgeGeometry = new THREE.EdgesGeometry(geometry);
   const edgeMaterial = new THREE.LineBasicMaterial({ 
@@ -333,6 +342,11 @@ function createFace(position, rotation, color, label, normalVector) {
   edges.position.copy(position);
   edges.rotation.setFromVector3(rotation);
   cubeGroup.add(edges);
+
+  if (!SHOW_FRONT_BOTTOM_PANES && (normalVector.z === -1 || normalVector.y === -1)) {
+    face.visible = false;
+    edges.visible = false;
+  }
   
   return face;
 }
@@ -746,7 +760,7 @@ analyser.smoothingTimeConstant = 0.6;
 mixBus.connect(analyser);
 mixBus.connect(Tone.Destination);
 
-const masterBus = new Tone.Gain(0.75);
+const masterBus = new Tone.Gain(0.6);
 masterBus.connect(mixBus);
 
 const reverb = new Tone.Reverb({
@@ -756,78 +770,9 @@ const reverb = new Tone.Reverb({
 });
 reverb.connect(mixBus);
 
-const clarinetSampleUrl = 'clarinet_G.wav';
-let clarinetSampleBuffer = null;
-let clarinetLoopPoints = null;
-const clarinetSampleReady = Tone.ToneAudioBuffer.fromUrl(clarinetSampleUrl)
-  .then((buffer) => {
-    clarinetSampleBuffer = buffer;
-    if (!clarinetLoopPoints) {
-      clarinetLoopPoints = calculateLoopPoints(buffer);
-    }
-    return buffer;
-  })
-  .catch((err) => {
-    console.error('Clarinet sample failed to load:', err);
-    throw err;
-  });
+const SHOW_FRONT_BOTTOM_PANES = true;
 
-function findZeroCrossing(data, startIndex, endIndex, forward = true) {
-  const stepStart = forward ? Math.max(1, startIndex + 1) : Math.min(data.length - 2, endIndex - 1);
-  const stepEnd = forward ? Math.min(endIndex, data.length - 1) : Math.max(startIndex, 1);
-  if (forward) {
-    for (let i = stepStart; i <= stepEnd; i++) {
-      const prev = data[i - 1];
-      const curr = data[i];
-      if ((prev <= 0 && curr >= 0) || (prev >= 0 && curr <= 0)) {
-        return i;
-      }
-    }
-    return Math.min(endIndex, data.length - 1);
-  }
-  for (let i = stepStart; i >= stepEnd; i--) {
-    const next = data[i + 1];
-    const curr = data[i];
-    if ((curr <= 0 && next >= 0) || (curr >= 0 && next <= 0)) {
-      return i;
-    }
-  }
-  return Math.max(startIndex, 0);
-}
-
-function calculateLoopPoints(buffer) {
-  if (!buffer) {
-    return null;
-  }
-  const channelCount = buffer.numberOfChannels;
-  const firstChannel = channelCount > 0 ? buffer.getChannelData(0) : null;
-  if (!firstChannel || firstChannel.length === 0) {
-    return { start: 0, end: buffer.duration };
-  }
-
-  const sampleRate = buffer.sampleRate;
-  const totalSamples = firstChannel.length;
-  const headSearch = Math.min(totalSamples - 1, Math.floor(sampleRate * 0.08));
-  const tailSearch = Math.min(totalSamples - 1, Math.floor(sampleRate * 0.12));
-
-  const startIndex = findZeroCrossing(firstChannel, 0, headSearch, true);
-  const minEndIndex = Math.min(totalSamples - 1, startIndex + Math.floor(sampleRate * 0.3));
-  const tailStart = Math.max(minEndIndex, totalSamples - tailSearch - 1);
-  const endIndex = findZeroCrossing(firstChannel, tailStart, totalSamples - 2, false);
-
-  let finalStart = Math.max(0, startIndex - Math.floor(sampleRate * 0.002));
-  let finalEnd = Math.max(endIndex, finalStart + Math.floor(sampleRate * 0.25));
-  if (finalEnd >= totalSamples) {
-    finalEnd = totalSamples - 1;
-  }
-
-  const startTime = finalStart / sampleRate;
-  const endTime = Math.min(buffer.duration, finalEnd / sampleRate);
-  if (endTime <= startTime + 0.01) {
-    return { start: 0, end: buffer.duration };
-  }
-  return { start: startTime, end: endTime };
-}
+const clarinetBaseNote = 'G4';
 
 let audioReadyPromise = null;
 async function ensureAudioStarted() {
@@ -842,11 +787,6 @@ async function ensureAudioStarted() {
       });
   }
   await audioReadyPromise;
-  try {
-    await clarinetSampleReady;
-  } catch (err) {
-    console.error('Failed to load clarinet sample:', err);
-  }
 }
 
 // Track playing dots
@@ -854,106 +794,132 @@ const dots = [];
 let dotIdCounter = 0;
 
 function createDotVoice(dot) {
-  const output = new Tone.Gain(0.8);
+  const output = new Tone.Gain(0.6);
   output.connect(masterBus);
 
-  const reverbSend = new Tone.Gain(0.18);
+  const reverbSend = new Tone.Gain(0.2);
   output.connect(reverbSend);
   reverbSend.connect(reverb);
 
-  const ampEnv = new Tone.AmplitudeEnvelope({
-    attack: 0.12,
-    decay: 0.25,
-    sustain: 0.7,
-    release: 1.4
-  }).connect(output);
-
-  const autoFilter = new Tone.AutoFilter({
-    frequency: 0.3,
-    baseFrequency: 250,
-    octaves: 3,
-    depth: 0.25,
-    type: 'sine'
-  }).connect(ampEnv);
-  autoFilter.start();
-
-  const sampleGain = new Tone.Gain(0);
-  let samplePlayer = null;
-
-  const vibrato = new Tone.Vibrato({
-    frequency: 5,
-    depth: 0,
-    wet: 1
+  // --- CLARINET-LIKE OSCILLATOR ---
+  // Using PolySynth-style approach with custom partials
+  const harmonicOsc = new Tone.Oscillator({
+    type: 'custom',
+    partials: [1, 0, 0.5, 0, 0.25, 0, 0.12, 0, 0.06], // Odd harmonics (clarinet-like)
+    frequency: clarinetBaseNote
+  });
+  
+  // Second oscillator slightly detuned for richness
+  const secondOsc = new Tone.Oscillator({
+    type: 'custom',
+    partials: [0.8, 0, 0.4, 0, 0.2, 0, 0.1],
+    frequency: Tone.Frequency(clarinetBaseNote).toFrequency() * 1.002 // ~3 cents sharp
+  });
+  
+  // Third oscillator slightly flat
+  const thirdOsc = new Tone.Oscillator({
+    type: 'custom', 
+    partials: [0.6, 0, 0.3, 0, 0.15],
+    frequency: Tone.Frequency(clarinetBaseNote).toFrequency() * 0.998 // ~3 cents flat
   });
 
-  const colorFilter = new Tone.Filter({
+  // Inharmonic oscillator for roughness control
+  const baseFreq = Tone.Frequency(clarinetBaseNote).toFrequency();
+  const inharmonicOsc = new Tone.Oscillator({
+    type: 'custom',
+    partials: [0.4, 0, 0.2, 0, 0.1],
+    frequency: baseFreq * 1.01 // More detuned for inharmonicity
+  });
+
+  // Gain controls
+  const harmonicGain = new Tone.Gain(0.5);
+  const secondGain = new Tone.Gain(0.2);
+  const thirdGain = new Tone.Gain(0.15);
+  const inharmonicGain = new Tone.Gain(0); // Controlled by X axis
+
+  harmonicOsc.connect(harmonicGain);
+  secondOsc.connect(secondGain);
+  thirdOsc.connect(thirdGain);
+  inharmonicOsc.connect(inharmonicGain);
+
+  // --- NOISE for breath/noisiness ---
+  const noiseSource = new Tone.Noise('pink');
+  const noiseFilter = new Tone.Filter({
+    type: 'bandpass',
+    frequency: 2000,
+    Q: 0.8
+  });
+  const noiseGain = new Tone.Gain(0.05); // Slight breath
+  noiseSource.connect(noiseFilter);
+  noiseFilter.connect(noiseGain);
+
+  // --- FILTER for spectral centroid ---
+  const centroidFilter = new Tone.Filter({
     type: 'lowpass',
-    frequency: 9000,
-    Q: 0.6
+    frequency: 3500,
+    Q: 0.5,
+    rolloff: -24
   });
 
-  const textureCrusher = new Tone.BitCrusher({
-    bits: 12,
-    wet: 0
+  // High shelf EQ
+  const highShelf = new Tone.EQ3({
+    low: 1,
+    mid: 0,
+    high: -2,
+    lowFrequency: 300,
+    highFrequency: 2500
   });
 
-  sampleGain.connect(vibrato);
-  vibrato.connect(colorFilter);
-  colorFilter.connect(textureCrusher);
-  textureCrusher.connect(autoFilter);
+  // Main amplitude envelope
+  const ampEnv = new Tone.AmplitudeEnvelope({
+    attack: 0.15,
+    decay: 0.2,
+    sustain: 0.85,
+    release: 1.2
+  });
+
+  // Signal routing: oscillators -> filter -> EQ -> envelope -> output
+  harmonicGain.connect(centroidFilter);
+  secondGain.connect(centroidFilter);
+  thirdGain.connect(centroidFilter);
+  inharmonicGain.connect(centroidFilter);
+  noiseGain.connect(centroidFilter);
+  centroidFilter.connect(highShelf);
+  highShelf.connect(ampEnv);
+  ampEnv.connect(output);
+
+  // Start oscillators and noise
+  harmonicOsc.start();
+  secondOsc.start();
+  thirdOsc.start();
+  inharmonicOsc.start();
+  noiseSource.start();
+
+  // Trigger envelope
+  ampEnv.triggerAttack();
 
   const voice = {
     output,
     reverbSend,
     ampEnv,
-    autoFilter,
-    samplePlayer,
-    sampleGain,
-    vibrato,
-    colorFilter,
-    textureCrusher,
+    harmonicOsc,
+    secondOsc,
+    thirdOsc,
+    inharmonicOsc,
+    harmonicGain,
+    secondGain,
+    thirdGain,
+    inharmonicGain,
+    noiseSource,
+    noiseFilter,
+    noiseGain,
+    centroidFilter,
+    highShelf,
     disposing: false
   };
   dot.voice = voice;
 
-  clarinetSampleReady
-    .then((buffer) => {
-      if (voice.disposing) {
-        return;
-      }
-      if (!buffer || !buffer.loaded) {
-        console.warn('Clarinet sample buffer missing after load');
-        return;
-      }
-      const player = new Tone.Player({
-        loop: true,
-        fadeIn: 0.02,
-        fadeOut: 0.08,
-        autostart: false
-      }).connect(sampleGain);
-      player.buffer = buffer;
-      if (clarinetLoopPoints) {
-        player.loopStart = clarinetLoopPoints.start;
-        player.loopEnd = clarinetLoopPoints.end;
-      }
-      player.fadeIn = 0.035;
-      player.fadeOut = 0.045;
-      voice.samplePlayer = player;
-      samplePlayer = player;
-      try {
-        const loopOffset = clarinetLoopPoints ? clarinetLoopPoints.start : 0;
-        player.start(undefined, loopOffset);
-      } catch (err) {
-        console.error('Failed to start clarinet sample:', err);
-        player.dispose();
-        voice.samplePlayer = null;
-        return;
-      }
-      updateDotAudio(dot);
-    })
-    .catch(err => {
-      console.error('Clarinet sample player failed to load:', err);
-    });
+  updateDotAudio(dot);
 }
 
 function updateDotAudio(dot) {
@@ -962,54 +928,80 @@ function updateDotAudio(dot) {
   }
 
   const voice = dot.voice;
-  const inharmonicity = THREE.MathUtils.clamp(dot.x, 0, 1);
-  const spectralCentroid = THREE.MathUtils.clamp(dot.y, 0, 1);
-  const noisyness = THREE.MathUtils.clamp(dot.z, 0, 1);
+  
+  // Get normalized parameters (0-1 range)
+  // Center (0.5) is the neutral/unchanged state - pure clarinet G4
+  const rawX = THREE.MathUtils.clamp(dot.x, 0, 1);
+  const rawY = THREE.MathUtils.clamp(dot.y, 0, 1);
+  const rawZ = THREE.MathUtils.clamp(dot.z, 0, 1);
+  
+  // Convert to -1 to +1 range where 0 is center (neutral)
+  const inharmonicity = (rawX - 0.5) * 2;  // -1 (left) to +1 (right)
+  const spectralCentroid = (rawY - 0.5) * 2;  // -1 (bottom) to +1 (top)
+  const noisiness = (rawZ - 0.5) * 2;  // -1 (front) to +1 (back)
 
-  const deltaInharm = THREE.MathUtils.clamp((inharmonicity - 0.5) / 0.5, -1, 1);
-  const deltaCentroid = THREE.MathUtils.clamp((spectralCentroid - 0.5) / 0.5, -1, 1);
-  const deltaNoise = THREE.MathUtils.clamp((noisyness - 0.5) / 0.5, -1, 1);
-  const clarinetReference = 1200;
+  // === INHARMONICITY (X axis) ===
+  // Center = pure clarinet tone, edges = inharmonic beating
+  // Mix in the slightly detuned oscillator to create inharmonicity
+  const inharmonicAmount = Math.abs(inharmonicity); // 0 at center, 1 at edges
+  
+  // Reduce main harmonic slightly as inharmonicity increases
+  const harmonicLevel = THREE.MathUtils.lerp(0.85, 0.5, inharmonicAmount);
+  voice.harmonicGain.gain.linearRampTo(harmonicLevel, 0.15);
+  
+  // Mix in detuned oscillator for inharmonicity (creates beating/roughness)
+  // Use linearRampTo since this can be 0
+  const inharmonicLevel = inharmonicAmount * 0.4; // Up to 40% of detuned osc
+  voice.inharmonicGain.gain.linearRampTo(inharmonicLevel, 0.15);
 
-  const noiseAmount = Math.max(0, deltaNoise);
-  const clarityAmount = Math.max(0, -deltaNoise);
+  // === SPECTRAL CENTROID (Y axis) ===
+  // Center = neutral clarinet brightness, up = brighter, down = darker
+  const neutralCutoff = 4000; // Neutral filter frequency at center
+  const minCutoff = 600;      // Darkest (bottom)
+  const maxCutoff = 14000;    // Brightest (top)
+  
+  // Map -1 to +1 to cutoff range
+  const cutoffFreq = spectralCentroid >= 0 
+    ? THREE.MathUtils.lerp(neutralCutoff, maxCutoff, spectralCentroid)
+    : THREE.MathUtils.lerp(neutralCutoff, minCutoff, -spectralCentroid);
+  voice.centroidFilter.frequency.linearRampTo(cutoffFreq, 0.12);
+  
+  // Filter resonance - neutral at center
+  const filterQ = 1.0 + spectralCentroid * 0.8; // 0.2 to 1.8
+  voice.centroidFilter.Q.linearRampTo(Math.max(0.2, filterQ), 0.12);
+  
+  // High shelf - 0 at center (use linearRampTo since it can be 0)
+  const highBoost = spectralCentroid * 10; // -10 to +10 dB
+  voice.highShelf.high.linearRampTo(highBoost, 0.12);
+  
+  // Noise filter follows centroid
+  const noiseNeutral = 2000;
+  const noiseFreq = spectralCentroid >= 0
+    ? THREE.MathUtils.lerp(noiseNeutral, 8000, spectralCentroid)
+    : THREE.MathUtils.lerp(noiseNeutral, 400, -spectralCentroid);
+  voice.noiseFilter.frequency.linearRampTo(noiseFreq, 0.12);
 
-  if (voice.sampleGain) {
-    const gainTarget = THREE.MathUtils.clamp(1 - noiseAmount * 0.18 + clarityAmount * 0.08, 0.72, 1.05);
-    voice.sampleGain.gain.rampTo(gainTarget, 0.12);
-  }
+  // === NOISINESS (Z axis) ===
+  // Center = slight breath noise (natural clarinet), front = pure, back = noisy
+  // At center: noiseLevel=0.08 (slight breath for realism)
+  // Use linearRampTo since this can approach 0
+  const noiseLevel = THREE.MathUtils.clamp(0.08 + noisiness * 0.5, 0.001, 0.6);
+  voice.noiseGain.gain.linearRampTo(noiseLevel, 0.12);
+  
+  // Noise bandwidth - tighter at center, wider at edges
+  const noiseQ = THREE.MathUtils.clamp(1.2 - Math.abs(noisiness) * 0.9, 0.3, 2.0);
+  voice.noiseFilter.Q.linearRampTo(noiseQ, 0.12);
 
-  if (voice.samplePlayer) {
-    const rate = THREE.MathUtils.clamp(1 + deltaInharm * 0.035, 0.88, 1.12);
-    voice.samplePlayer.playbackRate = rate;
-  }
+  // === CROSS-PARAMETER INTERACTIONS ===
+  // Reverb send - neutral at center, increases with brightness and noisiness
+  const reverbAmount = 0.15 + Math.max(0, spectralCentroid) * 0.1 + Math.max(0, noisiness) * 0.15;
+  voice.reverbSend.gain.linearRampTo(reverbAmount, 0.2);
 
-  const brightnessFactor = THREE.MathUtils.clamp(0.5 + deltaCentroid * 0.5, 0, 1);
-  const colorFreq = THREE.MathUtils.lerp(3200, 16000, brightnessFactor);
-  voice.colorFilter.frequency.rampTo(colorFreq, 0.12);
-  voice.colorFilter.Q = THREE.MathUtils.clamp(1 + (brightnessFactor - 0.5) * 1.6, 0.4, 2.4);
-
-  voice.vibrato.depth = Math.abs(deltaInharm) * 0.45;
-  voice.vibrato.frequency = 4 + Math.abs(deltaInharm) * 6;
-
-  voice.textureCrusher.wet.value = noiseAmount;
-  voice.textureCrusher.bits = Math.round(THREE.MathUtils.clamp(12 - noiseAmount * 9, 4, 12));
-
-  voice.autoFilter.frequency.rampTo(0.35 + Math.abs(deltaInharm) * 5.5, 0.2);
-  voice.autoFilter.depth.rampTo(0.02 + noiseAmount * 0.5, 0.2);
-  voice.autoFilter.baseFrequency = 320 + THREE.MathUtils.clamp(clarinetReference * (0.18 + brightnessFactor * 0.62), 320, 6200);
-  voice.autoFilter.octaves = THREE.MathUtils.lerp(1.1, 3.4, brightnessFactor);
-
-  voice.ampEnv.attack = 0.09 + clarityAmount * 0.16;
-  voice.ampEnv.decay = 0.24 + clarityAmount * 0.22;
-  voice.ampEnv.sustain = 0.55 + clarityAmount * 0.35;
-  voice.ampEnv.release = 0.48 + Math.abs(deltaNoise) * 1.25;
-
-  voice.reverbSend.gain.rampTo(0.12 + brightnessFactor * 0.2 + noiseAmount * 0.28, 0.2);
+  // Update readouts (show 0-1 values for display)
   updateDescriptorReadouts({
-    centroid: spectralCentroid,
-    noisiness: noisyness,
-    inharm: inharmonicity
+    centroid: rawY,
+    noisiness: rawZ,
+    inharm: rawX
   });
 }
 
@@ -1021,32 +1013,50 @@ function disposeDotVoice(dot) {
   const voice = dot.voice;
   voice.disposing = true;
   voice.ampEnv.triggerRelease();
-  const releaseTail = voice.ampEnv.release + 0.4;
+  
+  const releaseTail = voice.ampEnv.release + 0.3;
 
   setTimeout(() => {
-    voice.autoFilter.stop();
-    if (voice.samplePlayer) {
-      if (voice.samplePlayer.state === 'started') {
-        try {
-          voice.samplePlayer.stop();
-        } catch (err) {
-          console.error('Failed to stop clarinet sample:', err);
-        }
-      }
+    // Stop and dispose oscillators
+    if (voice.harmonicOsc) {
+      voice.harmonicOsc.stop();
+      voice.harmonicOsc.dispose();
     }
-    voice.autoFilter.dispose();
+    if (voice.secondOsc) {
+      voice.secondOsc.stop();
+      voice.secondOsc.dispose();
+    }
+    if (voice.thirdOsc) {
+      voice.thirdOsc.stop();
+      voice.thirdOsc.dispose();
+    }
+    if (voice.inharmonicOsc) {
+      voice.inharmonicOsc.stop();
+      voice.inharmonicOsc.dispose();
+    }
+    
+    // Dispose gains
+    if (voice.harmonicGain) voice.harmonicGain.dispose();
+    if (voice.secondGain) voice.secondGain.dispose();
+    if (voice.thirdGain) voice.thirdGain.dispose();
+    if (voice.inharmonicGain) voice.inharmonicGain.dispose();
+    
+    // Dispose noise
+    if (voice.noiseSource) {
+      voice.noiseSource.stop();
+      voice.noiseSource.dispose();
+    }
+    if (voice.noiseFilter) voice.noiseFilter.dispose();
+    if (voice.noiseGain) voice.noiseGain.dispose();
+    
+    // Dispose filters and EQ
+    if (voice.centroidFilter) voice.centroidFilter.dispose();
+    if (voice.highShelf) voice.highShelf.dispose();
+    
+    // Dispose envelope and output
     voice.ampEnv.dispose();
-    voice.vibrato.dispose();
-    voice.colorFilter.dispose();
-    voice.textureCrusher.dispose();
     voice.output.dispose();
     voice.reverbSend.dispose();
-    if (voice.samplePlayer) {
-      voice.samplePlayer.dispose();
-    }
-    if (voice.sampleGain) {
-      voice.sampleGain.dispose();
-    }
   }, releaseTail * 1000);
 
   dot.voice = null;
@@ -1100,12 +1110,15 @@ let draggingHandle = false;
 let lastMouseX = 0;
 let lastMouseY = 0;
 
-function getIntersectionPoint(raycaster) {
-  // First check if mouse is over the cube at all
-  const boxIntersects = raycaster.intersectObject(invisibleCube);
-  
-  if (boxIntersects.length === 0) {
-    return null; // Not pointing at cube - hide crosshairs
+function getIntersectionPoint(raycaster, isDragging = false) {
+  // When dragging, be more lenient - don't require ray to hit cube
+  if (!isDragging) {
+    // First check if mouse is over the cube at all
+    const boxIntersects = raycaster.intersectObject(invisibleCube);
+    
+    if (boxIntersects.length === 0) {
+      return null; // Not pointing at cube - hide crosshairs
+    }
   }
   
   // Create a plane perpendicular to the camera view that goes through a point in the cube
@@ -1179,7 +1192,7 @@ function addDotAtPoint(point) {
 
     // Create a shadow plane that projects straight down to the bottom wall
     const shadowGeometry = new THREE.PlaneGeometry(0.2, 0.2);
-    const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0.4 });
+    const shadowMaterial = new THREE.ShadowMaterial({ opacity: 0 });
     const shadowPlane = new THREE.Mesh(shadowGeometry, shadowMaterial);
     shadowPlane.receiveShadow = true;
     shadowPlane.rotation.x = Math.PI / 2; // Rotate to be horizontal on the bottom
@@ -1284,7 +1297,7 @@ function onMouseMove(event) {
 
   if (draggedDot) {
     raycaster.setFromCamera(mouse, camera);
-    const intersectPoint = getIntersectionPoint(raycaster);
+    const intersectPoint = getIntersectionPoint(raycaster, true); // isDragging = true
 
     if (!intersectPoint) {
       return; // Keep dot at last valid location if ray misses cube
@@ -1317,6 +1330,164 @@ function onMouseMove(event) {
 function onMouseUp(event) {
   draggedDot = null;
   draggingHandle = false;
+}
+
+// Scroll wheel to adjust depth (Z axis) of the marker
+function onMouseWheel(event) {
+  if (dots.length === 0) return;
+  
+  const dot = dots[0];
+  if (!dot) return;
+  
+  event.preventDefault();
+  
+  const halfSize = cubeSize / 2;
+  const step = cubeSize * 0.05; // 5% of cube size per scroll tick
+  const delta = event.deltaY > 0 ? -step : step; // Scroll up = forward, down = back
+  
+  // Update Z position (depth)
+  const newZ = Math.max(-halfSize, Math.min(halfSize, dot.mesh.position.z + delta));
+  dot.mesh.position.z = newZ;
+  
+  // Update shadow and crosshairs
+  dot.shadow.position.set(dot.mesh.position.x, -halfSize, newZ);
+  if (dot.crosshairs) {
+    cubeGroup.remove(dot.crosshairs);
+    dot.crosshairs = createHoverLines(dot.mesh.position, true);
+    cubeGroup.add(dot.crosshairs);
+  }
+  
+  // Update normalized coords
+  const normalized = normalizeTimbreCoords(dot.mesh.position);
+  dot.x = normalized.x;
+  dot.y = normalized.y;
+  dot.z = normalized.z;
+  
+  updateDotAudio(dot);
+}
+
+// Keyboard controls for fine positioning
+function onKeyDown(event) {
+  if (dots.length === 0) return;
+  
+  const dot = dots[0];
+  if (!dot) return;
+  
+  const halfSize = cubeSize / 2;
+  const step = event.shiftKey ? cubeSize * 0.1 : cubeSize * 0.03; // Shift = bigger steps
+  let moved = false;
+  
+  switch (event.key) {
+    case 'ArrowLeft':
+      dot.mesh.position.x = Math.max(-halfSize, dot.mesh.position.x - step);
+      moved = true;
+      break;
+    case 'ArrowRight':
+      dot.mesh.position.x = Math.min(halfSize, dot.mesh.position.x + step);
+      moved = true;
+      break;
+    case 'ArrowUp':
+      if (event.ctrlKey || event.metaKey) {
+        // Ctrl+Up = move forward (Z)
+        dot.mesh.position.z = Math.min(halfSize, dot.mesh.position.z + step);
+      } else {
+        // Up = move up (Y)
+        dot.mesh.position.y = Math.min(halfSize, dot.mesh.position.y + step);
+      }
+      moved = true;
+      break;
+    case 'ArrowDown':
+      if (event.ctrlKey || event.metaKey) {
+        // Ctrl+Down = move backward (Z)
+        dot.mesh.position.z = Math.max(-halfSize, dot.mesh.position.z - step);
+      } else {
+        // Down = move down (Y)
+        dot.mesh.position.y = Math.max(-halfSize, dot.mesh.position.y - step);
+      }
+      moved = true;
+      break;
+    case 'w': case 'W':
+      dot.mesh.position.z = Math.min(halfSize, dot.mesh.position.z + step);
+      moved = true;
+      break;
+    case 's': case 'S':
+      dot.mesh.position.z = Math.max(-halfSize, dot.mesh.position.z - step);
+      moved = true;
+      break;
+    case 'a': case 'A':
+      dot.mesh.position.x = Math.max(-halfSize, dot.mesh.position.x - step);
+      moved = true;
+      break;
+    case 'd': case 'D':
+      dot.mesh.position.x = Math.min(halfSize, dot.mesh.position.x + step);
+      moved = true;
+      break;
+    case 'q': case 'Q':
+      dot.mesh.position.y = Math.min(halfSize, dot.mesh.position.y + step);
+      moved = true;
+      break;
+    case 'e': case 'E':
+      dot.mesh.position.y = Math.max(-halfSize, dot.mesh.position.y - step);
+      moved = true;
+      break;
+    // Number keys for corner presets
+    case '1': // Front-bottom-left
+      dot.mesh.position.set(-halfSize * 0.98, -halfSize * 0.98, halfSize * 0.98);
+      moved = true;
+      break;
+    case '2': // Front-bottom-right
+      dot.mesh.position.set(halfSize * 0.98, -halfSize * 0.98, halfSize * 0.98);
+      moved = true;
+      break;
+    case '3': // Front-top-left
+      dot.mesh.position.set(-halfSize * 0.98, halfSize * 0.98, halfSize * 0.98);
+      moved = true;
+      break;
+    case '4': // Front-top-right
+      dot.mesh.position.set(halfSize * 0.98, halfSize * 0.98, halfSize * 0.98);
+      moved = true;
+      break;
+    case '5': // Back-bottom-left
+      dot.mesh.position.set(-halfSize * 0.98, -halfSize * 0.98, -halfSize * 0.98);
+      moved = true;
+      break;
+    case '6': // Back-bottom-right
+      dot.mesh.position.set(halfSize * 0.98, -halfSize * 0.98, -halfSize * 0.98);
+      moved = true;
+      break;
+    case '7': // Back-top-left
+      dot.mesh.position.set(-halfSize * 0.98, halfSize * 0.98, -halfSize * 0.98);
+      moved = true;
+      break;
+    case '8': // Back-top-right
+      dot.mesh.position.set(halfSize * 0.98, halfSize * 0.98, -halfSize * 0.98);
+      moved = true;
+      break;
+    case '0': // Center
+      dot.mesh.position.set(0, 0, 0);
+      moved = true;
+      break;
+  }
+  
+  if (moved) {
+    event.preventDefault();
+    
+    // Update shadow and crosshairs
+    dot.shadow.position.set(dot.mesh.position.x, -halfSize, dot.mesh.position.z);
+    if (dot.crosshairs) {
+      cubeGroup.remove(dot.crosshairs);
+      dot.crosshairs = createHoverLines(dot.mesh.position, true);
+      cubeGroup.add(dot.crosshairs);
+    }
+    
+    // Update normalized coords
+    const normalized = normalizeTimbreCoords(dot.mesh.position);
+    dot.x = normalized.x;
+    dot.y = normalized.y;
+    dot.z = normalized.z;
+    
+    updateDotAudio(dot);
+  }
 }
 
 function createHoverLines(point, isPermanent = false) {
@@ -1589,122 +1760,358 @@ function handleVRControllerRaycast(controller, index) {
 renderer.domElement.addEventListener('mousedown', onMouseDown);
 renderer.domElement.addEventListener('mousemove', onMouseMove);
 renderer.domElement.addEventListener('mouseup', onMouseUp);
+renderer.domElement.addEventListener('wheel', onMouseWheel, { passive: false });
+document.addEventListener('keydown', onKeyDown);
 
+// ============ PURE WEBGL SPECTROGRAM (Chrome Music Lab Style) ============
 const spectroCanvas = document.getElementById('spectrograph');
 const bufferLength = analyser.frequencyBinCount;
 const dataArray = new Uint8Array(bufferLength);
-const spectroRenderer = new THREE.WebGLRenderer({
-  canvas: spectroCanvas,
-  antialias: true,
-  alpha: true,
-  preserveDrawingBuffer: true
-});
 
-const spectroPixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-const spectroWidth = spectroCanvas.clientWidth || spectroCanvas.width;
-const spectroHeight = spectroCanvas.clientHeight || spectroCanvas.height;
-spectroRenderer.setPixelRatio(spectroPixelRatio);
-spectroRenderer.setSize(spectroWidth, spectroHeight, false);
-spectroRenderer.setClearColor(0x000000, 1);
-spectroRenderer.outputEncoding = THREE.sRGBEncoding;
-window.addEventListener('resize', () => {
-  const newWidth = spectroCanvas.clientWidth || spectroCanvas.width;
-  const newHeight = spectroCanvas.clientHeight || spectroCanvas.height;
-  spectroRenderer.setSize(newWidth, newHeight, false);
-  spectroCamera.aspect = newWidth / newHeight;
-  spectroCamera.updateProjectionMatrix();
-});
+// WebGL setup
+const gl = spectroCanvas.getContext('webgl', { antialias: true });
+if (!gl) {
+  console.error('WebGL not supported');
+}
 
-const spectroScene = new THREE.Scene();
-
-const SPECTRO_FOV = 55;
-const SPECTRO_NEAR = 1;
-const SPECTRO_FAR = 100;
-const spectroCamera = new THREE.PerspectiveCamera(SPECTRO_FOV, spectroWidth / spectroHeight, SPECTRO_NEAR, SPECTRO_FAR);
-spectroCamera.position.set(0, 3.2, 6.8);
-spectroCamera.lookAt(0, 0.4, 0);
-
-const spectroAmbient = new THREE.AmbientLight(0xffffff, 0.35);
-spectroScene.add(spectroAmbient);
-const spectroKeyLight = new THREE.DirectionalLight(0xffffff, 0.6);
-spectroKeyLight.position.set(2.5, 3.2, 4.5);
-spectroScene.add(spectroKeyLight);
-
-const spectroGroup = new THREE.Group();
-spectroGroup.rotation.set(Math.PI / 2, 0, 0);
-spectroGroup.position.set(0, 0, -2.5);
-spectroScene.add(spectroGroup);
-
-const SPECTRO_BINS = 256;
-const SPECTRO_HISTORY = 256;
-const SPECTRO_GEOMETRY_SIZE = 9.5;
+// Constants matching Chrome Music Lab
+const SPECTRO_WIDTH = 256;
+const SPECTRO_HEIGHT = 256;
+const SPECTRO_GEOMETRY_SIZE = 12;
+const SPECTRO_TEXTURE_HEIGHT = 256;
 const SPECTRO_VERTICAL_SCALE = SPECTRO_GEOMETRY_SIZE / 3.5;
-const SPECTRO_BACKGROUND_RGB = { r: 0.0, g: 0.0, b: 0.0 };
-const spectroDataHistory = new Float32Array(SPECTRO_BINS * SPECTRO_HISTORY);
-const spectroSmoothing = new Float32Array(SPECTRO_BINS);
 
-function seedSpectroHistory() {
-  for (let x = 0; x < SPECTRO_HISTORY; x++) {
-    for (let y = 0; y < SPECTRO_BINS; y++) {
-      spectroDataHistory[x * SPECTRO_BINS + y] = 0;
+// Frequency data buffer
+const freqByteData = new Uint8Array(bufferLength);
+let spectroYOffset = 0;
+
+// Compile shader helper
+function compileShader(gl, source, type) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
+
+// Create shader program helper
+function createProgram(gl, vertexSource, fragmentSource) {
+  const vertexShader = compileShader(gl, vertexSource, gl.VERTEX_SHADER);
+  const fragmentShader = compileShader(gl, fragmentSource, gl.FRAGMENT_SHADER);
+  const program = gl.createProgram();
+  gl.attachShader(program, vertexShader);
+  gl.attachShader(program, fragmentShader);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(program));
+    return null;
+  }
+  return program;
+}
+
+// Vertex shader (matches Chrome Music Lab exactly)
+const spectroVertexSource = `
+attribute vec3 gPosition;
+attribute vec2 gTexCoord0;
+uniform sampler2D vertexFrequencyData;
+uniform float vertexYOffset;
+uniform mat4 worldViewProjection;
+uniform float verticalScale;
+
+varying vec2 texCoord;
+varying vec3 color;
+
+vec3 convertHSVToRGB(float hue, float saturation, float lightness) {
+  float chroma = lightness * saturation;
+  float hueDash = hue / 60.0;
+  float x = chroma * (1.0 - abs(mod(hueDash, 2.0) - 1.0));
+  vec3 hsv = vec3(0.0);
+
+  if(hueDash < 1.0) {
+    hsv.r = chroma;
+    hsv.g = x;
+  } else if (hueDash < 2.0) {
+    hsv.r = x;
+    hsv.g = chroma;
+  } else if (hueDash < 3.0) {
+    hsv.g = chroma;
+    hsv.b = x;
+  } else if (hueDash < 4.0) {
+    hsv.g = x;
+    hsv.b = chroma;
+  } else if (hueDash < 5.0) {
+    hsv.r = x;
+    hsv.b = chroma;
+  } else if (hueDash < 6.0) {
+    hsv.r = chroma;
+    hsv.b = x;
+  }
+
+  return hsv;
+}
+
+void main() {
+  float x = pow(256.0, gTexCoord0.x - 1.0);
+  vec4 sample = texture2D(vertexFrequencyData, vec2(x, gTexCoord0.y + vertexYOffset));
+  vec4 newPosition = vec4(gPosition.x, gPosition.y + verticalScale * sample.a, gPosition.z, 1.0);
+  gl_Position = worldViewProjection * newPosition;
+  texCoord = gTexCoord0;
+
+  float hue = 360.0 - ((newPosition.y / verticalScale) * 360.0);
+  color = convertHSVToRGB(hue, 1.0, 1.0);
+}
+`;
+
+// Fragment shader (matches Chrome Music Lab exactly)
+const spectroFragmentSource = `
+precision mediump float;
+
+varying vec2 texCoord;
+varying vec3 color;
+
+uniform sampler2D frequencyData;
+uniform vec4 foregroundColor;
+uniform vec4 backgroundColor;
+uniform float yoffset;
+
+void main() {
+  float x = pow(256.0, texCoord.x - 1.0);
+  float y = texCoord.y + yoffset;
+
+  vec4 sample = texture2D(frequencyData, vec2(x, y));
+  float k = sample.a;
+
+  // Fade out the mesh close to both edges (start and end of time)
+  float fade = pow(cos((1.0 - texCoord.y) * 0.5 * 3.1415926535), 0.5);
+  k *= fade;
+  gl_FragColor = backgroundColor + vec4(k * color, 1.0);
+}
+`;
+
+// Create shader program
+const spectroProgram = createProgram(gl, spectroVertexSource, spectroFragmentSource);
+
+// Get attribute/uniform locations
+const gPositionLoc = gl.getAttribLocation(spectroProgram, 'gPosition');
+const gTexCoord0Loc = gl.getAttribLocation(spectroProgram, 'gTexCoord0');
+const vertexFrequencyDataLoc = gl.getUniformLocation(spectroProgram, 'vertexFrequencyData');
+const vertexYOffsetLoc = gl.getUniformLocation(spectroProgram, 'vertexYOffset');
+const worldViewProjectionLoc = gl.getUniformLocation(spectroProgram, 'worldViewProjection');
+const verticalScaleLoc = gl.getUniformLocation(spectroProgram, 'verticalScale');
+const frequencyDataLoc = gl.getUniformLocation(spectroProgram, 'frequencyData');
+const foregroundColorLoc = gl.getUniformLocation(spectroProgram, 'foregroundColor');
+const backgroundColorLoc = gl.getUniformLocation(spectroProgram, 'backgroundColor');
+const yoffsetLoc = gl.getUniformLocation(spectroProgram, 'yoffset');
+
+// Create 3D mesh vertices and texture coordinates (like Chrome)
+const numVertices = SPECTRO_WIDTH * SPECTRO_HEIGHT;
+const vertices = new Float32Array(numVertices * 3);
+const texCoords = new Float32Array(numVertices * 2);
+const SPECTRO_X_SCALE = 1.4; // Stretch width (frequency axis)
+const SPECTRO_Z_SCALE = 0.9; // Depth (time axis)
+const SPECTRO_Z_OFFSET = 1.5; // Offset to keep fade-out end fixed while extending spawn end
+
+for (let z = 0; z < SPECTRO_HEIGHT; z++) {
+  for (let x = 0; x < SPECTRO_WIDTH; x++) {
+    const idx = SPECTRO_WIDTH * z + x;
+    vertices[3 * idx + 0] = SPECTRO_GEOMETRY_SIZE * SPECTRO_X_SCALE * (x - SPECTRO_WIDTH / 2) / SPECTRO_WIDTH;
+    vertices[3 * idx + 1] = 0;
+    vertices[3 * idx + 2] = SPECTRO_GEOMETRY_SIZE * SPECTRO_Z_SCALE * (z - SPECTRO_HEIGHT / 2) / SPECTRO_HEIGHT + SPECTRO_Z_OFFSET;
+    
+    texCoords[2 * idx + 0] = x / (SPECTRO_WIDTH - 1);
+    texCoords[2 * idx + 1] = z / (SPECTRO_HEIGHT - 1);
+  }
+}
+
+// Create VBO for vertices and texcoords
+const spectroVBO = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, spectroVBO);
+gl.bufferData(gl.ARRAY_BUFFER, vertices.byteLength + texCoords.byteLength, gl.STATIC_DRAW);
+gl.bufferSubData(gl.ARRAY_BUFFER, 0, vertices);
+gl.bufferSubData(gl.ARRAY_BUFFER, vertices.byteLength, texCoords);
+const vboTexCoordOffset = vertices.byteLength;
+
+// Create indices (like Chrome - with triangle removal for seam)
+let spectroNumIndices = (SPECTRO_WIDTH - 1) * (SPECTRO_HEIGHT - 1) * 6;
+const ROWS_TO_SKIP = 10; // Remove triangles at the wrap seam
+spectroNumIndices = spectroNumIndices - (6 * ROWS_TO_SKIP * (SPECTRO_WIDTH - 1));
+
+const indices = new Uint16Array((SPECTRO_WIDTH - 1) * (SPECTRO_HEIGHT - 1) * 6);
+let idx = 0;
+for (let z = 0; z < SPECTRO_HEIGHT - 1; z++) {
+  for (let x = 0; x < SPECTRO_WIDTH - 1; x++) {
+    indices[idx++] = z * SPECTRO_WIDTH + x;
+    indices[idx++] = z * SPECTRO_WIDTH + x + 1;
+    indices[idx++] = (z + 1) * SPECTRO_WIDTH + x + 1;
+    indices[idx++] = z * SPECTRO_WIDTH + x;
+    indices[idx++] = (z + 1) * SPECTRO_WIDTH + x + 1;
+    indices[idx++] = (z + 1) * SPECTRO_WIDTH + x;
+  }
+}
+
+const spectroIBO = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, spectroIBO);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+
+// Create texture for frequency data
+const spectroTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, spectroTexture);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+const textureData = new Uint8Array(bufferLength * SPECTRO_TEXTURE_HEIGHT);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, bufferLength, SPECTRO_TEXTURE_HEIGHT, 0, gl.ALPHA, gl.UNSIGNED_BYTE, textureData);
+
+// Matrix4x4 class - exact copy from Chrome Music Lab
+class Matrix4x4 {
+  constructor() {
+    this.elements = new Float32Array(16);
+    this.loadIdentity();
+  }
+  
+  loadIdentity() {
+    for (let i = 0; i < 16; i++) this.elements[i] = 0;
+    this.elements[0] = 1;
+    this.elements[5] = 1;
+    this.elements[10] = 1;
+    this.elements[15] = 1;
+    return this;
+  }
+  
+  translate(tx, ty, tz) {
+    this.elements[12] += this.elements[0] * tx + this.elements[4] * ty + this.elements[8] * tz;
+    this.elements[13] += this.elements[1] * tx + this.elements[5] * ty + this.elements[9] * tz;
+    this.elements[14] += this.elements[2] * tx + this.elements[6] * ty + this.elements[10] * tz;
+    this.elements[15] += this.elements[3] * tx + this.elements[7] * ty + this.elements[11] * tz;
+    return this;
+  }
+  
+  rotate(angle, x, y, z) {
+    const mag = Math.sqrt(x*x + y*y + z*z);
+    const sinAngle = Math.sin(angle * Math.PI / 180.0);
+    const cosAngle = Math.cos(angle * Math.PI / 180.0);
+    
+    if (mag > 0) {
+      x /= mag;
+      y /= mag;
+      z /= mag;
+      
+      const xx = x * x;
+      const yy = y * y;
+      const zz = z * z;
+      const xy = x * y;
+      const yz = y * z;
+      const zx = z * x;
+      const xs = x * sinAngle;
+      const ys = y * sinAngle;
+      const zs = z * sinAngle;
+      const oneMinusCos = 1.0 - cosAngle;
+      
+      const rotMat = new Matrix4x4();
+      
+      rotMat.elements[0] = (oneMinusCos * xx) + cosAngle;
+      rotMat.elements[1] = (oneMinusCos * xy) - zs;
+      rotMat.elements[2] = (oneMinusCos * zx) + ys;
+      rotMat.elements[3] = 0.0;
+      
+      rotMat.elements[4] = (oneMinusCos * xy) + zs;
+      rotMat.elements[5] = (oneMinusCos * yy) + cosAngle;
+      rotMat.elements[6] = (oneMinusCos * yz) - xs;
+      rotMat.elements[7] = 0.0;
+      
+      rotMat.elements[8] = (oneMinusCos * zx) - ys;
+      rotMat.elements[9] = (oneMinusCos * yz) + xs;
+      rotMat.elements[10] = (oneMinusCos * zz) + cosAngle;
+      rotMat.elements[11] = 0.0;
+      
+      rotMat.elements[12] = 0.0;
+      rotMat.elements[13] = 0.0;
+      rotMat.elements[14] = 0.0;
+      rotMat.elements[15] = 1.0;
+      
+      const result = rotMat.multiply(this);
+      this.elements = result.elements;
     }
+    return this;
+  }
+  
+  multiply(other) {
+    const result = new Matrix4x4();
+    for (let i = 0; i < 4; i++) {
+      result.elements[i*4+0] = this.elements[i*4+0] * other.elements[0] + 
+                               this.elements[i*4+1] * other.elements[4] + 
+                               this.elements[i*4+2] * other.elements[8] + 
+                               this.elements[i*4+3] * other.elements[12];
+      result.elements[i*4+1] = this.elements[i*4+0] * other.elements[1] + 
+                               this.elements[i*4+1] * other.elements[5] + 
+                               this.elements[i*4+2] * other.elements[9] + 
+                               this.elements[i*4+3] * other.elements[13];
+      result.elements[i*4+2] = this.elements[i*4+0] * other.elements[2] + 
+                               this.elements[i*4+1] * other.elements[6] + 
+                               this.elements[i*4+2] * other.elements[10] + 
+                               this.elements[i*4+3] * other.elements[14];
+      result.elements[i*4+3] = this.elements[i*4+0] * other.elements[3] + 
+                               this.elements[i*4+1] * other.elements[7] + 
+                               this.elements[i*4+2] * other.elements[11] + 
+                               this.elements[i*4+3] * other.elements[15];
+    }
+    return result;
+  }
+  
+  perspective(fovy, aspect, nearZ, farZ) {
+    const frustumH = Math.tan(fovy / 360.0 * Math.PI) * nearZ;
+    const frustumW = frustumH * aspect;
+    return this.frustum(-frustumW, frustumW, -frustumH, frustumH, nearZ, farZ);
+  }
+  
+  frustum(left, right, bottom, top, nearZ, farZ) {
+    const deltaX = right - left;
+    const deltaY = top - bottom;
+    const deltaZ = farZ - nearZ;
+    
+    if (nearZ <= 0 || farZ <= 0 || deltaX <= 0 || deltaY <= 0 || deltaZ <= 0)
+      return this;
+    
+    const frust = new Matrix4x4();
+    
+    frust.elements[0] = 2.0 * nearZ / deltaX;
+    frust.elements[1] = frust.elements[2] = frust.elements[3] = 0.0;
+    
+    frust.elements[5] = 2.0 * nearZ / deltaY;
+    frust.elements[4] = frust.elements[6] = frust.elements[7] = 0.0;
+    
+    frust.elements[8] = (right + left) / deltaX;
+    frust.elements[9] = (top + bottom) / deltaY;
+    frust.elements[10] = -(nearZ + farZ) / deltaZ;
+    frust.elements[11] = -1.0;
+    
+    frust.elements[14] = -2.0 * nearZ * farZ / deltaZ;
+    frust.elements[12] = frust.elements[13] = frust.elements[15] = 0.0;
+    
+    const result = frust.multiply(this);
+    this.elements = result.elements;
+    return this;
   }
 }
-seedSpectroHistory();
 
-const SPECTRO_TIME_SPAN = SPECTRO_GEOMETRY_SIZE;
-const SPECTRO_FREQ_SPAN = SPECTRO_GEOMETRY_SIZE;
-const spectroVertexCount = SPECTRO_HISTORY * SPECTRO_BINS;
-const spectroPositionsArray = new Float32Array(spectroVertexCount * 3);
-const spectroColorsArray = new Float32Array(spectroVertexCount * 3);
-const spectroIndices = new Uint16Array((SPECTRO_HISTORY - 1) * (SPECTRO_BINS - 1) * 6);
+// Camera settings - exact Chrome Music Lab values (in degrees)
+const cameraXRot = -180;
+const cameraYRot = 270;
+const cameraZRot = 90;
+const cameraXT = 0;
+const cameraYT = -4;
+const cameraZT = -4;
 
-for (let x = 0; x < SPECTRO_HISTORY; x++) {
-  const xPos = SPECTRO_GEOMETRY_SIZE * (0.5 - (x / Math.max(1, SPECTRO_HISTORY - 1)));
-  for (let y = 0; y < SPECTRO_BINS; y++) {
-    const zPos = SPECTRO_GEOMETRY_SIZE * (0.5 - (y / Math.max(1, SPECTRO_BINS - 1)));
-    const vertIndex = (x * SPECTRO_BINS + y) * 3;
-    spectroPositionsArray[vertIndex] = xPos;
-    spectroPositionsArray[vertIndex + 1] = 0;
-    spectroPositionsArray[vertIndex + 2] = zPos;
-  }
-}
+// WebGL state
+gl.clearColor(0.0, 0.0, 0.0, 1);
+gl.enable(gl.DEPTH_TEST);
 
-let indexWrite = 0;
-for (let x = 0; x < SPECTRO_HISTORY - 1; x++) {
-  for (let y = 0; y < SPECTRO_BINS - 1; y++) {
-    const a = x * SPECTRO_BINS + y;
-    const b = (x + 1) * SPECTRO_BINS + y;
-    const c = (x + 1) * SPECTRO_BINS + (y + 1);
-    const d = x * SPECTRO_BINS + (y + 1);
-    spectroIndices[indexWrite++] = a;
-    spectroIndices[indexWrite++] = b;
-    spectroIndices[indexWrite++] = d;
-    spectroIndices[indexWrite++] = b;
-    spectroIndices[indexWrite++] = c;
-    spectroIndices[indexWrite++] = d;
-  }
-}
-
-const spectroGeometry = new THREE.BufferGeometry();
-spectroGeometry.setAttribute('position', new THREE.BufferAttribute(spectroPositionsArray, 3));
-spectroGeometry.setAttribute('color', new THREE.BufferAttribute(spectroColorsArray, 3));
-spectroGeometry.setIndex(new THREE.BufferAttribute(spectroIndices, 1));
-spectroGeometry.computeVertexNormals();
-
-const spectroMaterial = new THREE.MeshStandardMaterial({
-  vertexColors: true,
-  side: THREE.FrontSide,
-  roughness: 0.42,
-  metalness: 0.0,
-  emissive: new THREE.Color(0x000000),
-  emissiveIntensity: 0.0
-});
-
-const spectroMesh = new THREE.Mesh(spectroGeometry, spectroMaterial);
-spectroMesh.position.y = 0;
-spectroGroup.add(spectroMesh);
-const spectroTempColorOut = new THREE.Color();
+let spectroTextureWriteIndex = 0;
 
 const descriptorReadouts = {
   centroid: document.getElementById('readout-centroid'),
@@ -1731,90 +2138,82 @@ let vrUIPanel = null;
 let vrSpectrographPlane = null;
 let vrSpectrographTexture = null;
 
-function sampleSpectroColor(amplitude) {
-  const clamped = THREE.MathUtils.clamp(amplitude, 0, 1);
-  const hue = (360 - (clamped * 360)) % 360;
-  const chroma = 1.0;
-  const hueDash = hue / 60;
-  const x = chroma * (1 - Math.abs((hueDash % 2) - 1));
-  let r = 0;
-  let g = 0;
-  let b = 0;
-
-  if (hueDash < 1) {
-    r = chroma;
-    g = x;
-  } else if (hueDash < 2) {
-    r = x;
-    g = chroma;
-  } else if (hueDash < 3) {
-    g = chroma;
-    b = x;
-  } else if (hueDash < 4) {
-    g = x;
-    b = chroma;
-  } else if (hueDash < 5) {
-    r = x;
-    b = chroma;
-  } else {
-    r = chroma;
-    b = x;
-  }
-
-  spectroTempColorOut.setRGB(
-    THREE.MathUtils.clamp(SPECTRO_BACKGROUND_RGB.r + clamped * r, 0, 1),
-    THREE.MathUtils.clamp(SPECTRO_BACKGROUND_RGB.g + clamped * g, 0, 1),
-    THREE.MathUtils.clamp(SPECTRO_BACKGROUND_RGB.b + clamped * b, 0, 1)
-  );
-
-  return spectroTempColorOut;
-}
-
-function updateSpectrographMesh() {
-  spectroDataHistory.copyWithin(SPECTRO_BINS, 0);
-  const latestColumnOffset = 0;
-  for (let bin = 0; bin < SPECTRO_BINS; bin++) {
-    const freqRatio = bin / (SPECTRO_BINS - 1);
-    const freqCoord = Math.pow(256, freqRatio - 1);
-    const fftIndex = Math.min(bufferLength - 1, Math.round(freqCoord * (bufferLength - 1)));
-    const amplitude = (dataArray[fftIndex] || 0) / 255;
-    const smoothed = THREE.MathUtils.lerp(spectroSmoothing[bin] || 0, amplitude, 0.35);
-    spectroSmoothing[bin] = smoothed;
-    spectroDataHistory[latestColumnOffset + bin] = smoothed;
-  }
-
-  const positionAttribute = spectroGeometry.getAttribute('position');
-  const colorAttribute = spectroGeometry.getAttribute('color');
-  const positionsArray = positionAttribute.array;
-  const colorArray = colorAttribute.array;
-  for (let x = 0; x < SPECTRO_HISTORY; x++) {
-    const columnOffset = x * SPECTRO_BINS;
-    const timeRatio = x / (SPECTRO_HISTORY - 1);
-    const fade = Math.pow(Math.cos(timeRatio * 0.5 * Math.PI), 0.5);
-    for (let y = 0; y < SPECTRO_BINS; y++) {
-      const dataIndex = columnOffset + y;
-      const vertexIndex = dataIndex * 3;
-      const amplitude = Math.max(0, spectroDataHistory[dataIndex]) * fade;
-      positionsArray[vertexIndex + 1] = amplitude * SPECTRO_VERTICAL_SCALE;
-      const color = sampleSpectroColor(amplitude);
-      colorArray[vertexIndex] = color.r;
-      colorArray[vertexIndex + 1] = color.g;
-      colorArray[vertexIndex + 2] = color.b;
-    }
-  }
-  positionAttribute.needsUpdate = true;
-  colorAttribute.needsUpdate = true;
-  spectroGeometry.computeVertexNormals();
+function updateSpectrographTexture() {
+  analyser.getByteFrequencyData(freqByteData);
+  
+  // Upload texture row (like Chrome)
+  gl.bindTexture(gl.TEXTURE_2D, spectroTexture);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, spectroYOffset, bufferLength, 1, gl.ALPHA, gl.UNSIGNED_BYTE, freqByteData);
+  
+  // Increment AFTER writing (like Chrome)
+  spectroYOffset = (spectroYOffset + 1) % SPECTRO_TEXTURE_HEIGHT;
 }
 
 function drawSpectrograph() {
   requestAnimationFrame(drawSpectrograph);
-  analyser.getByteFrequencyData(dataArray);
-  updateSpectrographMesh();
-  spectroRenderer.render(spectroScene, spectroCamera);
-  if (vrSpectrographTexture) {
-    vrSpectrographTexture.needsUpdate = true;
+  updateSpectrographTexture();
+  
+  const canvas = spectroCanvas;
+  const width = canvas.clientWidth || canvas.width;
+  const height = canvas.clientHeight || canvas.height;
+  
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
   }
+  gl.viewport(0, 0, width, height);
+  
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  
+  gl.useProgram(spectroProgram);
+  
+  // Build MVP matrix (exact Chrome Music Lab approach)
+  const aspect = width / height;
+  
+  const projection = new Matrix4x4();
+  projection.perspective(55, aspect, 1, 100);
+  
+  const view = new Matrix4x4();
+  view.translate(0, 0, -12.0);
+  
+  const model = new Matrix4x4();
+  model.rotate(cameraXRot, 1, 0, 0);
+  model.rotate(cameraYRot, 0, 1, 0);
+  model.rotate(cameraZRot, 0, 0, 1);
+  model.translate(cameraXT, cameraYT, cameraZT);
+  
+  // Compute MVP: model * view * projection
+  let mvp = model.multiply(view);
+  mvp = mvp.multiply(projection);
+  
+  gl.uniformMatrix4fv(worldViewProjectionLoc, false, mvp.elements);
+  
+  // Set uniforms
+  const normalizedYOffset = spectroYOffset / (SPECTRO_TEXTURE_HEIGHT - 1);
+  const discretizedYOffset = Math.floor(normalizedYOffset * (SPECTRO_HEIGHT - 1)) / (SPECTRO_HEIGHT - 1);
+  
+  gl.uniform1i(vertexFrequencyDataLoc, 0);
+  gl.uniform1f(vertexYOffsetLoc, discretizedYOffset);
+  gl.uniform1f(verticalScaleLoc, SPECTRO_VERTICAL_SCALE);
+  gl.uniform1i(frequencyDataLoc, 0);
+  gl.uniform4fv(foregroundColorLoc, [0, 0.7, 0, 1]);
+  gl.uniform4fv(backgroundColorLoc, [0.0, 0.0, 0.0, 1]);
+  gl.uniform1f(yoffsetLoc, normalizedYOffset);
+  
+  // Bind VBO
+  gl.bindBuffer(gl.ARRAY_BUFFER, spectroVBO);
+  gl.enableVertexAttribArray(gPositionLoc);
+  gl.vertexAttribPointer(gPositionLoc, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(gTexCoord0Loc);
+  gl.vertexAttribPointer(gTexCoord0Loc, 2, gl.FLOAT, false, 0, vboTexCoordOffset);
+  
+  // Draw
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, spectroIBO);
+  gl.drawElements(gl.TRIANGLES, spectroNumIndices, gl.UNSIGNED_SHORT, 0);
+  
+  gl.disableVertexAttribArray(gPositionLoc);
+  gl.disableVertexAttribArray(gTexCoord0Loc);
 }
 drawSpectrograph();
 
