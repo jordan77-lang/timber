@@ -19,13 +19,13 @@
   <p id="info">Press Place Marker to spawn the cube at the center, then drag it to explore the timbre space. In VR, use controllers or hand tracking.</p>
   <div id="vr-button-container"></div>
   
-  <div class="main-container">
-    <div id="container">
+  <main class="main-container">
+    <div id="container" tabindex="0" aria-label="3D timbre cube visualizer">
     </div>
     
-    <div class="spectro-section">
-      <canvas id="spectrograph" width="600" height="500"></canvas>
-      <div class="spectro-readouts">
+    <div class="spectro-section" aria-label="Spectrogram and controls">
+      <canvas id="spectrograph" width="600" height="500" role="img" aria-label="Spectrogram visualization of current timbre">Your browser does not support canvas. A spectrogram visualization of the current timbre would appear here.</canvas>
+      <div class="spectro-readouts" aria-live="polite">
         <div>Centroid: <span id="readout-centroid">--</span></div>
         <div>Noisiness: <span id="readout-noisiness">--</span></div>
         <div>Inharmonicity: <span id="readout-inharm">--</span></div>
@@ -38,7 +38,7 @@
         <button id="reset-position">Reset Position</button>
       </div>
     </div>
-  </div>
+  </main>
   
   <script src="script.js"></script>
 </body>

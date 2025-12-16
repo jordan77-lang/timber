@@ -32,9 +32,11 @@ const controllerGrips = [];
 function createVRButton(isSupported) {
   const button = document.createElement('button');
   button.style.cssText = 'position: relative; padding: 12px 24px; border: 1px solid white; background: rgba(0,0,0,0.8); color: white; font-size: 13px; text-align: center; opacity: 0.9; outline: none; z-index: 999; cursor: pointer; font-family: sans-serif; margin: 10px;';
+  button.type = 'button';
   
   if (!isSupported) {
     button.textContent = 'OPEN ON VR DEVICE TO ENTER VR';
+    button.setAttribute('aria-label', 'Open on VR device to enter VR');
     button.style.cursor = 'default';
     button.style.opacity = '0.6';
     button.onclick = function() {
@@ -42,6 +44,7 @@ function createVRButton(isSupported) {
     };
   } else {
     button.textContent = 'ENTER VR';
+    button.setAttribute('aria-label', 'Enter VR');
     button.onclick = function() {
       if (renderer.xr.isPresenting) {
         if (hoverMarker) {
@@ -55,8 +58,10 @@ function createVRButton(isSupported) {
         }).then((session) => {
           renderer.xr.setSession(session);
           button.textContent = 'EXIT VR';
+            button.setAttribute('aria-label', 'Exit VR');
           session.addEventListener('end', () => {
             button.textContent = 'ENTER VR';
+              button.setAttribute('aria-label', 'Enter VR');
           });
         }).catch((err) => {
           console.error('Failed to start VR session:', err);
