@@ -8,11 +8,11 @@ Interactive 3D timbre space visualization based on Leah Reid's research and the 
 
 ## Overview
 
-The Timbre Cube is an interactive 3D timbre space where each axis controls a perceptual descriptor (Peeters et al., 2011). Moving the marker morphs a clarinet-like base tone in real time.
+The Timbre Cube is an interactive 3D timbre space where each axis controls a perceptual descriptor (Peeters et al., 2011). Moving the marker morphs a real clarinet sample in real time.
 
-- **Pure origin:** (x, y, z) = (0, 0, 0) is the most "pure/clean/dark" sound.
+- **Pure origin:** (x, y, z) = (0, 0, 0) plays the unmodified clarinet sample—the most "pure/clean/dark" sound.
 - **One-sided axes:** Increasing any coordinate adds that descriptor (roughness, brightness, noisiness).
-- **Coherent source:** All components (tone, noise, breath) share one filter/envelope path for fusion (Gestalt common fate; Bregman, 1990).
+- **Coherent source:** All components (sample, noise, breath) share one filter/envelope path for fusion (Gestalt common fate; Bregman, 1990).
 - **Perceptual scaling:** Brightness uses a pow curve; noise follows the same tilt for one-source perception; detune jitter is slow and correlated.
 
 ---
@@ -24,19 +24,17 @@ The Timbre Cube is an interactive 3D timbre space where each axis controls a per
 **What it is:** Deviation from perfect harmonic partials; more inharmonicity yields roughness/beating.
 
 **What you hear:**
-- **x = 0 (pure):** Single clarinet-like source, no detune companion, maximum main-harmonic gain.
-- **x → 1:** Increasing roughness and metallic beating from a detuned companion.
+- **x = 0 (pure):** Unmodified clarinet sample, no pitch-shifted companion.
+- **x → 1:** Increasing roughness and metallic beating from a detuned pitch-shifted copy mixed in.
 
 **The math:**
 ```
 inharmonicity = x               // 0..1
-harmonicLevel   = (x < 0.02) ? 0.99 : lerp(0.97, 0.6, x*0.8)
-inharmonicLevel = (x < 0.02) ? 0.0  : lerp(0.0, 0.5, x)
+sampleLevel     = (x < 0.02) ? 0.99 : lerp(0.97, 0.6, x*0.8)
+pitchShiftLevel = (x < 0.02) ? 0.0  : lerp(0.0, 0.5, x)
 
-// Detune companion in cents with slow jitter
-detuneBaseCents   = lerp(0, 25, x)
-detuneJitterCents = jitterDetune * x   // jitterDetune is slow random-walk in ±8 cents
-detuneRatio       = 1 + (detuneBaseCents + detuneJitterCents) / 1200
+// Pitch shift amount (semitones) with slow jitter
+pitchShift = lerp(0, 0.25, x) + (jitterDetune / 100) * x
 ```
 
 ---
@@ -97,12 +95,12 @@ reverbAmount = min(0.28, 0.15 + spectralCentroid * 0.08 + noisiness * 0.10)
 
 ## Sound Synthesis Architecture (coherent path)
 
-- **Main harmonic source:** Clarinet-like custom partials: [1, 0, 0.55, 0, 0.28, 0, 0.12, 0, 0.06].
-- **Inharmonic companion:** Detuned per X with slow jitter; gain up with X.
+- **Base sample:** Real clarinet recording (`Clarinet_G.wav`) loops continuously as the pure source at origin (0,0,0).
+- **Inharmonicity (X):** A pitch-shifted copy of the sample is mixed in; increasing X adds roughness/beating via slight detuning with slow jitter.
 - **Noise:** Pink noise → bandpass; level/Q set by Z (pow curve); cutoff follows the perceptual centroid tilt.
 - **Breath transient:** Short white-noise bandpass on note start.
 - **Shared chain:** lowpass (centroid, pow-mapped) → gentle high-shelf → body bell (≈1.85 kHz, +2 dB) → soft saturation (tanh) → amplitude envelope → output + reverb send (capped).
-- **Jitter (coherent variation):** One shared random-walk value perturbs cutoff/noise; slow detune jitter (±~8 cents) modulates the inharmonic companion.
+- **Jitter (coherent variation):** One shared random-walk value perturbs cutoff/noise; slow detune jitter modulates the pitch-shifted companion.
 - **Reverb:** Small-room convolution IR; send scaled by Y/Z and capped for clarity.
 
 This shared path reinforces one-source perception (all components share onset, filter, and envelope), aligning with common-fate cues (Bregman, 1990) while applying timbre descriptors (Peeters et al., 2011).
