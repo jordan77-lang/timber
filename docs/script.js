@@ -145,7 +145,8 @@ function setupController(index) {
   controller.addEventListener('connected', (event) => {
     controller.userData.inputSource = event.data;
     if (line) {
-      line.visible = !event.data?.hand;
+      const hasHand = event.data && event.data.hand;
+      line.visible = !hasHand;
     }
   });
 
@@ -199,6 +200,7 @@ cubeGroup.rotation.y = Math.PI / 12; // Rotate counter-clockwise about 15 degree
 scene.add(cubeGroup);
 
 const cubeSize = 4;
+const purePoint = new THREE.Vector3(-cubeSize / 2, -cubeSize / 2, -cubeSize / 2); // (0,0,0) timbre origin
 const faces = [];
 let hoverLines = null;
 let hoverMarker = null;
@@ -240,9 +242,8 @@ function normalizeTimbreCoords(point) {
   };
 }
 
-// Create an invisible cube that fills the entire volume for raycasting
-// Make it much larger to ensure we catch all areas
-const invisibleGeometry = new THREE.BoxGeometry(cubeSize * 1.5, cubeSize * 1.5, cubeSize * 1.5);
+// Create an invisible cube that matches the volume for raycasting
+const invisibleGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
 const invisibleMaterial = new THREE.MeshBasicMaterial({ 
   transparent: true, 
   opacity: 0,
@@ -763,12 +764,53 @@ mixBus.connect(Tone.Destination);
 const masterBus = new Tone.Gain(0.6);
 masterBus.connect(mixBus);
 
-const reverb = new Tone.Reverb({
-  decay: 2.8,
-  preDelay: 0.03,
-  wet: 1
-});
+// Small-room convolution reverb (procedural IR for natural short space)
+function createSmallRoomIR(seconds = 0.25, decay = 3.0) {
+  const context = Tone.getContext().rawContext;
+  const rate = context.sampleRate;
+  const length = Math.max(1, Math.floor(rate * seconds));
+  const impulse = context.createBuffer(2, length, rate);
+  for (let ch = 0; ch < impulse.numberOfChannels; ch++) {
+    const data = impulse.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      const t = i / length;
+      // Exponential decay of noise for room-like tail
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+    }
+  }
+  return impulse;
+}
+
+const roomIR = createSmallRoomIR(0.28, 3.4);
+const reverb = new Tone.Convolver(roomIR);
+reverb.normalize = true;
 reverb.connect(mixBus);
+
+let isPlaying = true; // Global play/pause state
+
+// Subtle correlated random-walk jitter to add natural variation while keeping coherence
+const jitterState = {
+  shared: 0,
+  detune: 0
+};
+
+function tickJitter() {
+  // Shared jitter for cutoff/noise
+  jitterState.shared = THREE.MathUtils.clamp(
+    jitterState.shared + (Math.random() - 0.5) * 14,
+    -80,
+    80
+  );
+
+  // Slow detune jitter (cents) for inharmonic companion
+  jitterState.detune = THREE.MathUtils.clamp(
+    jitterState.detune + (Math.random() - 0.5) * 2.5,
+    -8,
+    8
+  );
+}
+
+setInterval(tickJitter, 480);
 
 const SHOW_FRONT_BOTTOM_PANES = true;
 
@@ -794,52 +836,35 @@ const dots = [];
 let dotIdCounter = 0;
 
 function createDotVoice(dot) {
-  const output = new Tone.Gain(0.6);
+  const output = new Tone.Gain(0.7);
   output.connect(masterBus);
 
-  const reverbSend = new Tone.Gain(0.2);
+  const reverbSend = new Tone.Gain(0.16);
   output.connect(reverbSend);
   reverbSend.connect(reverb);
 
-  // --- CLARINET-LIKE OSCILLATOR ---
-  // Using PolySynth-style approach with custom partials
+  // --- BASE OSCILLATORS ---
+  // One main clarinet-like source + one roughness companion we fade in with X
+  const baseFreq = Tone.Frequency(clarinetBaseNote).toFrequency();
+
   const harmonicOsc = new Tone.Oscillator({
     type: 'custom',
-    partials: [1, 0, 0.5, 0, 0.25, 0, 0.12, 0, 0.06], // Odd harmonics (clarinet-like)
-    frequency: clarinetBaseNote
-  });
-  
-  // Second oscillator slightly detuned for richness
-  const secondOsc = new Tone.Oscillator({
-    type: 'custom',
-    partials: [0.8, 0, 0.4, 0, 0.2, 0, 0.1],
-    frequency: Tone.Frequency(clarinetBaseNote).toFrequency() * 1.002 // ~3 cents sharp
-  });
-  
-  // Third oscillator slightly flat
-  const thirdOsc = new Tone.Oscillator({
-    type: 'custom', 
-    partials: [0.6, 0, 0.3, 0, 0.15],
-    frequency: Tone.Frequency(clarinetBaseNote).toFrequency() * 0.998 // ~3 cents flat
+    partials: [1, 0, 0.55, 0, 0.28, 0, 0.12, 0, 0.06],
+    frequency: clarinetBaseNote,
+    phase: 0
   });
 
-  // Inharmonic oscillator for roughness control
-  const baseFreq = Tone.Frequency(clarinetBaseNote).toFrequency();
   const inharmonicOsc = new Tone.Oscillator({
     type: 'custom',
-    partials: [0.4, 0, 0.2, 0, 0.1],
-    frequency: baseFreq * 1.01 // More detuned for inharmonicity
+    partials: [1, 0, 0.35, 0, 0.18],
+    frequency: baseFreq,
+    phase: 0
   });
 
-  // Gain controls
-  const harmonicGain = new Tone.Gain(0.5);
-  const secondGain = new Tone.Gain(0.2);
-  const thirdGain = new Tone.Gain(0.15);
+  const harmonicGain = new Tone.Gain(0.9);
   const inharmonicGain = new Tone.Gain(0); // Controlled by X axis
 
   harmonicOsc.connect(harmonicGain);
-  secondOsc.connect(secondGain);
-  thirdOsc.connect(thirdGain);
   inharmonicOsc.connect(inharmonicGain);
 
   // --- NOISE for breath/noisiness ---
@@ -853,6 +878,24 @@ function createDotVoice(dot) {
   noiseSource.connect(noiseFilter);
   noiseFilter.connect(noiseGain);
 
+  // Breath transient for a natural attack
+  const breathNoise = new Tone.Noise('white');
+  const breathFilter = new Tone.Filter({
+    type: 'bandpass',
+    frequency: 1400,
+    Q: 1.4
+  });
+  const breathGain = new Tone.Gain(0);
+  const breathEnv = new Tone.Envelope({
+    attack: 0.01,
+    decay: 0.16,
+    sustain: 0,
+    release: 0.08
+  });
+  breathNoise.connect(breathFilter);
+  breathFilter.connect(breathGain);
+  breathEnv.connect(breathGain.gain);
+
   // --- FILTER for spectral centroid ---
   const centroidFilter = new Tone.Filter({
     type: 'lowpass',
@@ -865,35 +908,47 @@ function createDotVoice(dot) {
   const highShelf = new Tone.EQ3({
     low: 1,
     mid: 0,
-    high: -2,
-    lowFrequency: 300,
-    highFrequency: 2500
+    high: -1.0,
+    lowFrequency: 280,
+    highFrequency: 2400
   });
+
+  // Gentle body resonance for naturalness
+  const bodyBell = new Tone.Filter({
+    type: 'peaking',
+    frequency: 1850,
+    Q: 1.1,
+    gain: 2
+  });
+
+  // Soft saturation to glue components
+  const saturator = new Tone.Distortion(0.025);
+  saturator.oversample = '2x';
 
   // Main amplitude envelope
   const ampEnv = new Tone.AmplitudeEnvelope({
-    attack: 0.15,
-    decay: 0.2,
-    sustain: 0.85,
+    attack: 0.16,
+    decay: 0.25,
+    sustain: 0.88,
     release: 1.2
   });
 
   // Signal routing: oscillators -> filter -> EQ -> envelope -> output
   harmonicGain.connect(centroidFilter);
-  secondGain.connect(centroidFilter);
-  thirdGain.connect(centroidFilter);
   inharmonicGain.connect(centroidFilter);
   noiseGain.connect(centroidFilter);
+  breathGain.connect(centroidFilter);
   centroidFilter.connect(highShelf);
-  highShelf.connect(ampEnv);
+  highShelf.connect(bodyBell);
+  bodyBell.connect(saturator);
+  saturator.connect(ampEnv);
   ampEnv.connect(output);
 
   // Start oscillators and noise
   harmonicOsc.start();
-  secondOsc.start();
-  thirdOsc.start();
   inharmonicOsc.start();
   noiseSource.start();
+  breathNoise.start();
 
   // Trigger envelope
   ampEnv.triggerAttack();
@@ -903,18 +958,21 @@ function createDotVoice(dot) {
     reverbSend,
     ampEnv,
     harmonicOsc,
-    secondOsc,
-    thirdOsc,
     inharmonicOsc,
     harmonicGain,
-    secondGain,
-    thirdGain,
     inharmonicGain,
     noiseSource,
     noiseFilter,
     noiseGain,
+    breathNoise,
+    breathFilter,
+    breathGain,
+    breathEnv,
     centroidFilter,
     highShelf,
+    bodyBell,
+    saturator,
+    baseFreq,
     disposing: false
   };
   dot.voice = voice;
@@ -930,72 +988,64 @@ function updateDotAudio(dot) {
   const voice = dot.voice;
   
   // Get normalized parameters (0-1 range)
-  // Center (0.5) is the neutral/unchanged state - pure clarinet G4
   const rawX = THREE.MathUtils.clamp(dot.x, 0, 1);
   const rawY = THREE.MathUtils.clamp(dot.y, 0, 1);
   const rawZ = THREE.MathUtils.clamp(dot.z, 0, 1);
   
-  // Convert to -1 to +1 range where 0 is center (neutral)
-  const inharmonicity = (rawX - 0.5) * 2;  // -1 (left) to +1 (right)
-  const spectralCentroid = (rawY - 0.5) * 2;  // -1 (bottom) to +1 (top)
-  const noisiness = (rawZ - 0.5) * 2;  // -1 (front) to +1 (back)
+  // One-sided mappings: 0 = pure/clean/dark, 1 = rough/noisy/bright
+  const inharmonicity = rawX;      // 0 to 1
+  const spectralCentroid = rawY;   // 0 (dark) to 1 (bright)
+  const noisiness = rawZ;          // 0 (clean) to 1 (noisy)
+  const yPerceptual = Math.pow(spectralCentroid, 0.6);
 
   // === INHARMONICITY (X axis) ===
-  // Center = pure clarinet tone, edges = inharmonic beating
-  // Mix in the slightly detuned oscillator to create inharmonicity
-  const inharmonicAmount = Math.abs(inharmonicity); // 0 at center, 1 at edges
+  const harmonicLevel = THREE.MathUtils.lerp(0.97, 0.6, inharmonicity * 0.8);
+  voice.harmonicGain.gain.linearRampTo(inharmonicity < 0.02
+    ? 0.99
+    : harmonicLevel, 0.12);
   
-  // Reduce main harmonic slightly as inharmonicity increases
-  const harmonicLevel = THREE.MathUtils.lerp(0.85, 0.5, inharmonicAmount);
-  voice.harmonicGain.gain.linearRampTo(harmonicLevel, 0.15);
-  
-  // Mix in detuned oscillator for inharmonicity (creates beating/roughness)
-  // Use linearRampTo since this can be 0
-  const inharmonicLevel = inharmonicAmount * 0.4; // Up to 40% of detuned osc
-  voice.inharmonicGain.gain.linearRampTo(inharmonicLevel, 0.15);
+  const inharmonicLevel = THREE.MathUtils.lerp(0, 0.5, inharmonicity);
+  voice.inharmonicGain.gain.linearRampTo(inharmonicity < 0.02
+    ? 0
+    : inharmonicLevel, 0.12);
+
+  // Detune companion oscillator for roughness with slow jitter for life
+  const detuneBaseCents = THREE.MathUtils.lerp(0, 25, inharmonicity); // up to ~25 cents
+  const detuneJitterCents = jitterState.detune * inharmonicity; // slow jitter, scaled by x
+  const detuneFactor = 1 + (detuneBaseCents + detuneJitterCents) / 1200; // cents to ratio
+  voice.inharmonicOsc.frequency.rampTo(voice.baseFreq * detuneFactor, 0.12);
 
   // === SPECTRAL CENTROID (Y axis) ===
-  // Center = neutral clarinet brightness, up = brighter, down = darker
-  const neutralCutoff = 4000; // Neutral filter frequency at center
-  const minCutoff = 600;      // Darkest (bottom)
-  const maxCutoff = 14000;    // Brightest (top)
-  
-  // Map -1 to +1 to cutoff range
-  const cutoffFreq = spectralCentroid >= 0 
-    ? THREE.MathUtils.lerp(neutralCutoff, maxCutoff, spectralCentroid)
-    : THREE.MathUtils.lerp(neutralCutoff, minCutoff, -spectralCentroid);
-  voice.centroidFilter.frequency.linearRampTo(cutoffFreq, 0.12);
-  
-  // Filter resonance - neutral at center
-  const filterQ = 1.0 + spectralCentroid * 0.8; // 0.2 to 1.8
-  voice.centroidFilter.Q.linearRampTo(Math.max(0.2, filterQ), 0.12);
-  
-  // High shelf - 0 at center (use linearRampTo since it can be 0)
-  const highBoost = spectralCentroid * 10; // -10 to +10 dB
-  voice.highShelf.high.linearRampTo(highBoost, 0.12);
-  
-  // Noise filter follows centroid
-  const noiseNeutral = 2000;
-  const noiseFreq = spectralCentroid >= 0
-    ? THREE.MathUtils.lerp(noiseNeutral, 8000, spectralCentroid)
-    : THREE.MathUtils.lerp(noiseNeutral, 400, -spectralCentroid);
-  voice.noiseFilter.frequency.linearRampTo(noiseFreq, 0.12);
+  const minCutoff = 700;
+  const maxCutoff = 13500;
+
+  // Perceptual-ish curve (pow) instead of strictly linear
+  const cutoffBase = THREE.MathUtils.lerp(minCutoff, maxCutoff, yPerceptual);
+
+  const cutoffFreq = THREE.MathUtils.clamp(cutoffBase + jitterState.shared, 500, 14500);
+  voice.centroidFilter.frequency.linearRampTo(cutoffFreq, 0.1);
+
+  const filterQ = THREE.MathUtils.clamp(0.8 + spectralCentroid * 1.1, 0.3, 1.9);
+  voice.centroidFilter.Q.linearRampTo(filterQ, 0.1);
+
+  const highBoost = (spectralCentroid - 0.5) * 8; // softer and centered tilt
+  voice.highShelf.high.linearRampTo(highBoost, 0.1);
+
+  // Keep noise aligned with the same spectral tilt for one-source perception
+  const noiseFreqBase = THREE.MathUtils.lerp(600, 8000, yPerceptual);
+  const noiseFreq = THREE.MathUtils.clamp(noiseFreqBase + jitterState.shared * 0.35, 400, 9000);
+  voice.noiseFilter.frequency.linearRampTo(noiseFreq, 0.1);
 
   // === NOISINESS (Z axis) ===
-  // Center = slight breath noise (natural clarinet), front = pure, back = noisy
-  // At center: noiseLevel=0.08 (slight breath for realism)
-  // Use linearRampTo since this can approach 0
-  const noiseLevel = THREE.MathUtils.clamp(0.08 + noisiness * 0.5, 0.001, 0.6);
-  voice.noiseGain.gain.linearRampTo(noiseLevel, 0.12);
+  const noiseLevel = THREE.MathUtils.clamp(0.01 + 0.45 * Math.pow(noisiness, 0.8) + jitterState.shared / 9000, 0.001, 0.55);
+  voice.noiseGain.gain.linearRampTo(noiseLevel, 0.1);
   
-  // Noise bandwidth - tighter at center, wider at edges
-  const noiseQ = THREE.MathUtils.clamp(1.2 - Math.abs(noisiness) * 0.9, 0.3, 2.0);
-  voice.noiseFilter.Q.linearRampTo(noiseQ, 0.12);
+  const noiseQ = THREE.MathUtils.clamp(1.2 - noisiness * 0.8, 0.35, 2.0);
+  voice.noiseFilter.Q.linearRampTo(noiseQ, 0.1);
 
   // === CROSS-PARAMETER INTERACTIONS ===
-  // Reverb send - neutral at center, increases with brightness and noisiness
-  const reverbAmount = 0.15 + Math.max(0, spectralCentroid) * 0.1 + Math.max(0, noisiness) * 0.15;
-  voice.reverbSend.gain.linearRampTo(reverbAmount, 0.2);
+  const reverbAmount = Math.min(0.28, 0.15 + spectralCentroid * 0.08 + noisiness * 0.10);
+  voice.reverbSend.gain.linearRampTo(reverbAmount, 0.18);
 
   // Update readouts (show 0-1 values for display)
   updateDescriptorReadouts({
@@ -1005,61 +1055,95 @@ function updateDotAudio(dot) {
   });
 }
 
-function disposeDotVoice(dot) {
+function disposeDotVoice(dot, immediate = false) {
   if (!dot.voice || dot.voice.disposing) {
     return;
   }
 
   const voice = dot.voice;
   voice.disposing = true;
-  voice.ampEnv.triggerRelease();
-  
-  const releaseTail = voice.ampEnv.release + 0.3;
+  dot.voice = null;
+
+  if (!immediate) {
+    voice.ampEnv.triggerRelease();
+  }
+  const releaseTail = immediate ? 0 : voice.ampEnv.release + 0.2;
 
   setTimeout(() => {
-    // Stop and dispose oscillators
     if (voice.harmonicOsc) {
       voice.harmonicOsc.stop();
       voice.harmonicOsc.dispose();
-    }
-    if (voice.secondOsc) {
-      voice.secondOsc.stop();
-      voice.secondOsc.dispose();
-    }
-    if (voice.thirdOsc) {
-      voice.thirdOsc.stop();
-      voice.thirdOsc.dispose();
     }
     if (voice.inharmonicOsc) {
       voice.inharmonicOsc.stop();
       voice.inharmonicOsc.dispose();
     }
-    
-    // Dispose gains
+
     if (voice.harmonicGain) voice.harmonicGain.dispose();
-    if (voice.secondGain) voice.secondGain.dispose();
-    if (voice.thirdGain) voice.thirdGain.dispose();
     if (voice.inharmonicGain) voice.inharmonicGain.dispose();
-    
-    // Dispose noise
+
     if (voice.noiseSource) {
       voice.noiseSource.stop();
       voice.noiseSource.dispose();
     }
     if (voice.noiseFilter) voice.noiseFilter.dispose();
     if (voice.noiseGain) voice.noiseGain.dispose();
-    
-    // Dispose filters and EQ
+
+    if (voice.breathNoise) {
+      voice.breathNoise.stop();
+      voice.breathNoise.dispose();
+    }
+    if (voice.breathFilter) voice.breathFilter.dispose();
+    if (voice.breathGain) voice.breathGain.dispose();
+    if (voice.breathEnv) voice.breathEnv.dispose();
+
     if (voice.centroidFilter) voice.centroidFilter.dispose();
     if (voice.highShelf) voice.highShelf.dispose();
-    
-    // Dispose envelope and output
+    if (voice.bodyBell) voice.bodyBell.dispose();
+    if (voice.saturator) voice.saturator.dispose();
+
     voice.ampEnv.dispose();
     voice.output.dispose();
     voice.reverbSend.dispose();
   }, releaseTail * 1000);
+}
 
-  dot.voice = null;
+function restartDotVoice(dot) {
+  // Recreate the voice to re-align phases and apply current parameters
+  if (dot.voice) {
+    disposeDotVoice(dot, true);
+  }
+  createDotVoice(dot);
+  updateDotAudio(dot);
+
+  if (dot.voice && dot.voice.breathEnv) {
+    dot.voice.breathEnv.triggerAttackRelease(0.22);
+  }
+}
+
+async function setPlaying(state) {
+  if (state === isPlaying) return;
+  isPlaying = state;
+
+  const btn = document.getElementById('play-pause');
+  if (btn) {
+    btn.textContent = isPlaying ? 'Pause' : 'Play';
+  }
+
+  if (!isPlaying) {
+    masterBus.gain.rampTo(0, 0.05);
+    dots.forEach((dot) => {
+      if (dot.voice && !dot.voice.disposing) {
+        dot.voice.output.gain.rampTo(0, 0.05);
+        dot.voice.ampEnv.triggerRelease();
+      }
+    });
+    return;
+  }
+
+  await ensureAudioStarted();
+  masterBus.gain.rampTo(0.6, 0.05);
+  dots.forEach((dot) => restartDotVoice(dot));
 }
 
 function destroyDot(dot) {
@@ -1077,6 +1161,11 @@ function destroyDot(dot) {
   }
   if (dot.shadow.material) {
     dot.shadow.material.dispose();
+  }
+  if (dot.pickHelper) {
+    if (dot.pickHelper.geometry) dot.pickHelper.geometry.dispose();
+    if (dot.pickHelper.material) dot.pickHelper.material.dispose();
+    cubeGroup.remove(dot.pickHelper);
   }
   
   // Dispose of crosshairs
@@ -1111,57 +1200,65 @@ let lastMouseX = 0;
 let lastMouseY = 0;
 
 function getIntersectionPoint(raycaster, isDragging = false) {
-  // When dragging, be more lenient - don't require ray to hit cube
-  if (!isDragging) {
-    // First check if mouse is over the cube at all
-    const boxIntersects = raycaster.intersectObject(invisibleCube);
-    
-    if (boxIntersects.length === 0) {
-      return null; // Not pointing at cube - hide crosshairs
+  cubeGroup.updateWorldMatrix(true, false);
+  const inverseMatrix = new THREE.Matrix4().copy(cubeGroup.matrixWorld).invert();
+  const localRay = raycaster.ray.clone().applyMatrix4(inverseMatrix);
+
+  const halfSize = cubeSize / 2;
+  const box = new THREE.Box3(
+    new THREE.Vector3(-halfSize, -halfSize, -halfSize),
+    new THREE.Vector3(halfSize, halfSize, halfSize)
+  );
+
+  // When dragging an existing dot, keep its current depth and move in full 3D using screen-space depth preservation.
+  if (isDragging && draggedDot) {
+    const dotWorld = new THREE.Vector3();
+    draggedDot.mesh.getWorldPosition(dotWorld);
+    const dotNdc = dotWorld.clone().project(camera);
+
+    const targetNdc = new THREE.Vector3(mouse.x, mouse.y, dotNdc.z);
+    const targetWorld = targetNdc.clone().unproject(camera);
+    const localPoint = cubeGroup.worldToLocal(targetWorld.clone());
+
+    localPoint.x = Math.max(-halfSize, Math.min(halfSize, localPoint.x));
+    localPoint.y = Math.max(-halfSize, Math.min(halfSize, localPoint.y));
+    localPoint.z = Math.max(-halfSize, Math.min(halfSize, localPoint.z));
+    return localPoint;
+  }
+
+  let result = null;
+
+  // First try direct ray-box intersection in cube-local space
+  const hitPoint = new THREE.Vector3();
+  const hit = localRay.intersectBox(box, hitPoint);
+  if (hit) {
+    result = hitPoint;
+  } else {
+    // If box miss, try intersecting the invisible cube mesh in world space and convert to local.
+    const boxIntersects = invisibleCube ? raycaster.intersectObject(invisibleCube) : [];
+    if (boxIntersects.length > 0) {
+      const worldPoint = boxIntersects[0].point.clone();
+      result = cubeGroup.worldToLocal(worldPoint);
     }
   }
-  
-  // Create a plane perpendicular to the camera view that goes through a point in the cube
-  // The depth is determined by the mouse's vertical position on screen
-  // This allows us to "scan" through the cube's depth by moving the mouse up/down
-  
-  const cameraDir = new THREE.Vector3();
-  camera.getWorldDirection(cameraDir);
-  
-  // Map mouse Y position (-1 to 1) to depth in cube (-cubeSize/2 to cubeSize/2)
-  // More intuitive: mouse at top of cube = far side, mouse at bottom = near side
-  const depthT = (mouse.y + 1) / 2; // Convert -1,1 to 0,1
-  const depthInCube = -cubeSize/2 + depthT * cubeSize; // Map to cube depth
-  
-  // Create a point at this depth along the camera's view direction
-  const cubeCenter = new THREE.Vector3(0, 0, 0);
-  const depthPoint = cubeCenter.clone().addScaledVector(cameraDir, depthInCube * 0.5);
-  
-  // Create plane through this depth point, perpendicular to camera
-  const planeNormal = cameraDir.clone().negate();
-  const plane = new THREE.Plane();
-  plane.setFromNormalAndCoplanarPoint(planeNormal, depthPoint);
-  
-  // Intersect ray with this plane
-  const planeIntersect = new THREE.Vector3();
-  const hasPlaneIntersect = raycaster.ray.intersectPlane(plane, planeIntersect);
-  
-  if (!hasPlaneIntersect) {
-    return null;
+
+  if (!result && isDragging) {
+    // Fallback: clamp along ray direction so the marker stays reachable.
+    if (!result) {
+      const samplePoint = new THREE.Vector3();
+      localRay.at(10, samplePoint);
+      result = box.clampPoint(samplePoint, new THREE.Vector3());
+    }
   }
-  
-  // Transform to local coordinates
-  const intersectLocal = planeIntersect.clone();
-  intersectLocal.sub(cubeGroup.position);
-  intersectLocal.applyQuaternion(cubeGroup.quaternion.clone().invert());
-  
-  // Clamp to cube bounds
-  const halfSize = cubeSize / 2;
-  intersectLocal.x = Math.max(-halfSize, Math.min(halfSize, intersectLocal.x));
-  intersectLocal.y = Math.max(-halfSize, Math.min(halfSize, intersectLocal.y));
-  intersectLocal.z = Math.max(-halfSize, Math.min(halfSize, intersectLocal.z));
-  
-  return intersectLocal;
+
+  if (!result) return null;
+
+  // Clamp final point to cube bounds to prevent wandering outside the box.
+  result.x = Math.max(-halfSize, Math.min(halfSize, result.x));
+  result.y = Math.max(-halfSize, Math.min(halfSize, result.y));
+  result.z = Math.max(-halfSize, Math.min(halfSize, result.z));
+
+  return result;
 }
 
 function addDotAtPoint(point) {
@@ -1198,6 +1295,18 @@ function addDotAtPoint(point) {
     shadowPlane.rotation.x = Math.PI / 2; // Rotate to be horizontal on the bottom
     cubeGroup.add(shadowPlane);
 
+    // Invisible (but pickable) helper to make selection easier
+    const pickGeom = new THREE.SphereGeometry(0.7, 16, 16);
+    const pickMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    });
+    const pickMesh = new THREE.Mesh(pickGeom, pickMat);
+    pickMesh.renderOrder = 0;
+    cubeGroup.add(pickMesh);
+
     dot = {
       mesh: dotMesh,
       shadow: shadowPlane,
@@ -1205,7 +1314,8 @@ function addDotAtPoint(point) {
       x: 0,
       y: 0,
       z: 0,
-      id: dotIdCounter++
+      id: dotIdCounter++,
+      pickHelper: pickMesh
     };
     dots.push(dot);
     createDotVoice(dot);
@@ -1216,6 +1326,12 @@ function addDotAtPoint(point) {
   dot.mesh.visible = true;
   dot.shadow.position.set(point.x, -cubeSize / 2, point.z);
   dot.shadow.visible = true;
+  if (dot.pickHelper) {
+    dot.pickHelper.position.copy(point);
+  }
+  if (dot.pickHelper) {
+    dot.pickHelper.position.copy(point);
+  }
 
   if (dot.crosshairs) {
     cubeGroup.remove(dot.crosshairs);
@@ -1234,8 +1350,10 @@ function addDotAtPoint(point) {
   dot.z = normalized.z;
 
   updateDotAudio(dot);
-  if (dot.voice) {
+  if (isPlaying && dot.voice) {
     dot.voice.ampEnv.triggerAttack();
+  } else if (dot.voice) {
+    dot.voice.output.gain.rampTo(0, 0.01);
   }
 
   if (hoverMarker) {
@@ -1261,14 +1379,33 @@ function onMouseDown(event) {
     return;
   }
   
-  const dotMeshes = dots.map(d => d.mesh);
-  const intersects = raycaster.intersectObjects(dotMeshes);
+  const pickerMeshes = dots.map(d => d.pickHelper || d.mesh).filter(Boolean);
+  const intersects = raycaster.intersectObjects(pickerMeshes);
   
   if (intersects.length > 0) {
     const clickedMesh = intersects[0].object;
-    draggedDot = dots.find(d => d.mesh === clickedMesh);
+    draggedDot = dots.find(d => d.pickHelper === clickedMesh || d.mesh === clickedMesh);
     
     if (draggedDot) {
+      event.preventDefault();
+    }
+  } else if (dots.length > 0) {
+    // Screen-space fallback: pick the nearest dot if the cursor is close in NDC.
+    const ndc = new THREE.Vector2(mouse.x, mouse.y);
+    let bestDot = null;
+    let bestDist = Infinity;
+    dots.forEach(d => {
+      const wp = new THREE.Vector3();
+      d.mesh.getWorldPosition(wp);
+      wp.project(camera);
+      const dist = ndc.distanceTo(new THREE.Vector2(wp.x, wp.y));
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestDot = d;
+      }
+    });
+    if (bestDot && bestDist < 0.2) {
+      draggedDot = bestDot;
       event.preventDefault();
     }
   }
@@ -1304,6 +1441,9 @@ function onMouseMove(event) {
     }
 
     draggedDot.mesh.position.copy(intersectPoint);
+    if (draggedDot.pickHelper) {
+      draggedDot.pickHelper.position.copy(intersectPoint);
+    }
 
     // Update shadow position to follow the dot
     draggedDot.shadow.position.set(intersectPoint.x, -cubeSize/2, intersectPoint.z);
@@ -1351,6 +1491,9 @@ function onMouseWheel(event) {
   
   // Update shadow and crosshairs
   dot.shadow.position.set(dot.mesh.position.x, -halfSize, newZ);
+  if (dot.pickHelper) {
+    dot.pickHelper.position.set(dot.mesh.position.x, dot.mesh.position.y, newZ);
+  }
   if (dot.crosshairs) {
     cubeGroup.remove(dot.crosshairs);
     dot.crosshairs = createHoverLines(dot.mesh.position, true);
@@ -1394,6 +1537,7 @@ function onKeyDown(event) {
         // Up = move up (Y)
         dot.mesh.position.y = Math.min(halfSize, dot.mesh.position.y + step);
       }
+      if (dot.pickHelper) dot.pickHelper.position.copy(dot.mesh.position);
       moved = true;
       break;
     case 'ArrowDown':
@@ -1404,14 +1548,17 @@ function onKeyDown(event) {
         // Down = move down (Y)
         dot.mesh.position.y = Math.max(-halfSize, dot.mesh.position.y - step);
       }
+      if (dot.pickHelper) dot.pickHelper.position.copy(dot.mesh.position);
       moved = true;
       break;
     case 'w': case 'W':
       dot.mesh.position.z = Math.min(halfSize, dot.mesh.position.z + step);
+      if (dot.pickHelper) dot.pickHelper.position.copy(dot.mesh.position);
       moved = true;
       break;
     case 's': case 'S':
       dot.mesh.position.z = Math.max(-halfSize, dot.mesh.position.z - step);
+      if (dot.pickHelper) dot.pickHelper.position.copy(dot.mesh.position);
       moved = true;
       break;
     case 'a': case 'A':
@@ -1586,10 +1733,10 @@ async function handleVRInputStart(event) {
       isDragging: false,
       dot: null
     };
-    if (source.userData.inputSource?.hand) {
-        source.userData.lastHandPos = new THREE.Vector3().setFromMatrixPosition(source.joints['index-finger-tip'].matrixWorld);
+    if (source.userData.inputSource && source.userData.inputSource.hand) {
+      source.userData.lastHandPos = new THREE.Vector3().setFromMatrixPosition(source.joints['index-finger-tip'].matrixWorld);
     } else {
-        source.userData.lastControllerPos = new THREE.Vector3().setFromMatrixPosition(source.matrixWorld);
+      source.userData.lastControllerPos = new THREE.Vector3().setFromMatrixPosition(source.matrixWorld);
     }
     return; // Stop further processing
   }
@@ -1635,7 +1782,7 @@ function getVRRaycaster(source) {
   const raycaster = new THREE.Raycaster();
   let origin, direction;
 
-  if (source.userData.inputSource?.hand) { // It's a hand
+  if (source.userData.inputSource && source.userData.inputSource.hand) { // It's a hand
     const handRay = getHandRay(source);
     if (!handRay) return null;
     origin = handRay.origin;
@@ -1768,8 +1915,11 @@ const spectroCanvas = document.getElementById('spectrograph');
 const bufferLength = analyser.frequencyBinCount;
 const dataArray = new Uint8Array(bufferLength);
 
-// WebGL setup
-const gl = spectroCanvas.getContext('webgl', { antialias: true });
+// WebGL setup (preserveDrawingBuffer enables reliable downloads/screenshots)
+let gl = null;
+if (spectroCanvas) {
+  gl = spectroCanvas.getContext('webgl', { antialias: true, preserveDrawingBuffer: true });
+}
 if (!gl) {
   console.error('WebGL not supported');
 }
@@ -2322,7 +2472,7 @@ function handleVRUIClick(button) {
   const action = button.userData.buttonAction;
   if (action === 'place marker') {
     ensureAudioStarted().then(() => {
-      addDotAtPoint(new THREE.Vector3(0, 0, 0));
+      addDotAtPoint(purePoint.clone());
     });
   } else if (action === 'download') {
     const link = document.createElement('a');
@@ -2427,7 +2577,7 @@ function animate() {
     // --- UNIFIED DRAGGING AND ROTATION LOGIC ---
     if (vrDraggedInfo.isRotating) {
       const source = vrDraggedInfo.source;
-      if (source.userData.inputSource?.hand) { // Hand rotation
+      if (source.userData.inputSource && source.userData.inputSource.hand) { // Hand rotation
         const indexTip = source.joints['index-finger-tip'];
         if (indexTip && source.userData.lastHandPos) {
           const currentPos = new THREE.Vector3().setFromMatrixPosition(indexTip.matrixWorld);
@@ -2641,15 +2791,25 @@ function animate() {
 renderer.setAnimationLoop(animate);
 
 // --- BUTTONS ---
+const playPauseButton = document.getElementById('play-pause');
+if (playPauseButton) {
+  playPauseButton.addEventListener('click', async () => {
+    await ensureAudioStarted();
+    await setPlaying(!isPlaying);
+  });
+}
+
 document.getElementById('place-marker').addEventListener('click', async () => {
   await ensureAudioStarted();
-  addDotAtPoint(new THREE.Vector3(0, 0, 0));
+  addDotAtPoint(purePoint.clone());
 });
 
 document.getElementById('download').addEventListener('click', () => {
+  const canvas = spectroCanvas || renderer.domElement;
+  if (!canvas) return;
   const link = document.createElement('a');
   link.download = 'spectrograph.png';
-  link.href = spectroCanvas.toDataURL();
+  link.href = canvas.toDataURL('image/png');
   link.click();
 });
 
