@@ -835,6 +835,20 @@ async function ensureAudioStarted() {
 const dots = [];
 let dotIdCounter = 0;
 
+// Preload the clarinet sample for faster voice creation
+let clarinetBuffer = null;
+const clarinetSamplePath = 'assets/sounds/Clarinet_G.wav';
+
+async function loadClarinetSample() {
+  if (clarinetBuffer) return clarinetBuffer;
+  clarinetBuffer = await Tone.Buffer.fromUrl(clarinetSamplePath);
+  console.log('Clarinet sample loaded');
+  return clarinetBuffer;
+}
+
+// Start loading immediately
+loadClarinetSample().catch(err => console.error('Failed to load clarinet sample:', err));
+
 function createDotVoice(dot) {
   const output = new Tone.Gain(0.7);
   output.connect(masterBus);
@@ -843,29 +857,28 @@ function createDotVoice(dot) {
   output.connect(reverbSend);
   reverbSend.connect(reverb);
 
-  // --- BASE OSCILLATORS ---
-  // One main clarinet-like source + one roughness companion we fade in with X
-  const baseFreq = Tone.Frequency(clarinetBaseNote).toFrequency();
-
-  const harmonicOsc = new Tone.Oscillator({
-    type: 'custom',
-    partials: [1, 0, 0.55, 0, 0.28, 0, 0.12, 0, 0.06],
-    frequency: clarinetBaseNote,
-    phase: 0
+  // --- SAMPLE PLAYER (replaces oscillators) ---
+  // The clarinet sample is the pure base sound at position (0,0,0)
+  const samplePlayer = new Tone.Player({
+    url: clarinetBuffer || clarinetSamplePath,
+    loop: true,
+    fadeIn: 0.05,
+    fadeOut: 0.05
   });
+  const sampleGain = new Tone.Gain(0.9);
+  samplePlayer.connect(sampleGain);
 
-  const inharmonicOsc = new Tone.Oscillator({
-    type: 'custom',
-    partials: [1, 0, 0.35, 0, 0.18],
-    frequency: baseFreq,
-    phase: 0
+  // --- PITCH SHIFT for inharmonicity effect ---
+  // Slight pitch shifting creates roughness/beating when mixed with original
+  const pitchShift = new Tone.PitchShift({
+    pitch: 0,
+    windowSize: 0.1,
+    delayTime: 0,
+    feedback: 0
   });
-
-  const harmonicGain = new Tone.Gain(0.9);
-  const inharmonicGain = new Tone.Gain(0); // Controlled by X axis
-
-  harmonicOsc.connect(harmonicGain);
-  inharmonicOsc.connect(inharmonicGain);
+  const pitchShiftGain = new Tone.Gain(0); // Controlled by X axis
+  samplePlayer.connect(pitchShift);
+  pitchShift.connect(pitchShiftGain);
 
   // --- NOISE for breath/noisiness ---
   const noiseSource = new Tone.Noise('pink');
@@ -933,9 +946,9 @@ function createDotVoice(dot) {
     release: 1.2
   });
 
-  // Signal routing: oscillators -> filter -> EQ -> envelope -> output
-  harmonicGain.connect(centroidFilter);
-  inharmonicGain.connect(centroidFilter);
+  // Signal routing: sample/noise -> filter -> EQ -> envelope -> output
+  sampleGain.connect(centroidFilter);
+  pitchShiftGain.connect(centroidFilter);
   noiseGain.connect(centroidFilter);
   breathGain.connect(centroidFilter);
   centroidFilter.connect(highShelf);
@@ -944,9 +957,8 @@ function createDotVoice(dot) {
   saturator.connect(ampEnv);
   ampEnv.connect(output);
 
-  // Start oscillators and noise
-  harmonicOsc.start();
-  inharmonicOsc.start();
+  // Start sample and noise
+  samplePlayer.start();
   noiseSource.start();
   breathNoise.start();
 
@@ -957,10 +969,10 @@ function createDotVoice(dot) {
     output,
     reverbSend,
     ampEnv,
-    harmonicOsc,
-    inharmonicOsc,
-    harmonicGain,
-    inharmonicGain,
+    samplePlayer,
+    sampleGain,
+    pitchShift,
+    pitchShiftGain,
     noiseSource,
     noiseFilter,
     noiseGain,
@@ -972,7 +984,6 @@ function createDotVoice(dot) {
     highShelf,
     bodyBell,
     saturator,
-    baseFreq,
     disposing: false
   };
   dot.voice = voice;
@@ -998,21 +1009,22 @@ function updateDotAudio(dot) {
   const noisiness = rawZ;          // 0 (clean) to 1 (noisy)
 
   // === INHARMONICITY (X axis) ===
-  const harmonicLevel = THREE.MathUtils.lerp(0.97, 0.6, inharmonicity * 0.8);
-  voice.harmonicGain.gain.linearRampTo(inharmonicity < 0.02
+  // At 0: pure clarinet sample only
+  // At 1: mix in pitch-shifted version for roughness/beating
+  const sampleLevel = THREE.MathUtils.lerp(0.97, 0.6, inharmonicity * 0.8);
+  voice.sampleGain.gain.linearRampTo(inharmonicity < 0.02
     ? 0.99
-    : harmonicLevel, 0.12);
+    : sampleLevel, 0.12);
   
-  const inharmonicLevel = THREE.MathUtils.lerp(0, 0.5, inharmonicity);
-  voice.inharmonicGain.gain.linearRampTo(inharmonicity < 0.02
+  const pitchShiftLevel = THREE.MathUtils.lerp(0, 0.5, inharmonicity);
+  voice.pitchShiftGain.gain.linearRampTo(inharmonicity < 0.02
     ? 0
-    : inharmonicLevel, 0.12);
+    : pitchShiftLevel, 0.12);
 
-  // Detune companion oscillator for roughness with slow jitter for life
-  const detuneBaseCents = THREE.MathUtils.lerp(0, 25, inharmonicity); // up to ~25 cents
-  const detuneJitterCents = jitterState.detune * inharmonicity; // slow jitter, scaled by x
-  const detuneFactor = 1 + (detuneBaseCents + detuneJitterCents) / 1200; // cents to ratio
-  voice.inharmonicOsc.frequency.rampTo(voice.baseFreq * detuneFactor, 0.12);
+  // Pitch shift amount for roughness (slight detuning creates beating)
+  const detuneBaseCents = THREE.MathUtils.lerp(0, 0.25, inharmonicity); // up to ~quarter semitone
+  const detuneJitterCents = (jitterState.detune / 100) * inharmonicity; // slow jitter, scaled by x
+  voice.pitchShift.pitch = detuneBaseCents + detuneJitterCents;
 
   // === SPECTRAL CENTROID (Y axis) ===
   const minCutoff = 700;
@@ -1070,17 +1082,13 @@ function disposeDotVoice(dot, immediate = false) {
   const releaseTail = immediate ? 0 : voice.ampEnv.release + 0.2;
 
   setTimeout(() => {
-    if (voice.harmonicOsc) {
-      voice.harmonicOsc.stop();
-      voice.harmonicOsc.dispose();
+    if (voice.samplePlayer) {
+      voice.samplePlayer.stop();
+      voice.samplePlayer.dispose();
     }
-    if (voice.inharmonicOsc) {
-      voice.inharmonicOsc.stop();
-      voice.inharmonicOsc.dispose();
-    }
-
-    if (voice.harmonicGain) voice.harmonicGain.dispose();
-    if (voice.inharmonicGain) voice.inharmonicGain.dispose();
+    if (voice.sampleGain) voice.sampleGain.dispose();
+    if (voice.pitchShift) voice.pitchShift.dispose();
+    if (voice.pitchShiftGain) voice.pitchShiftGain.dispose();
 
     if (voice.noiseSource) {
       voice.noiseSource.stop();
