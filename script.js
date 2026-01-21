@@ -353,6 +353,7 @@ function createFace(position, rotation, color, label, normalVector) {
 }
 
 // Create rotation handles - line with ball at the end on all four sides
+// Create rotation handles - line with ball at the end on all four sides
 const handleBallGeometry = new THREE.SphereGeometry(0.12, 32, 32);
 const handleBallMaterial = new THREE.MeshPhysicalMaterial({
   color: 0xffaa00,
@@ -361,80 +362,68 @@ const handleBallMaterial = new THREE.MeshPhysicalMaterial({
   emissive: 0x665500
 });
 
+// invisible hit volume for easier grabbing
+const handleHitGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+const handleHitMaterial = new THREE.MeshBasicMaterial({
+  visible: false
+});
+
+function createHandle(position, rotation) {
+  const group = new THREE.Group();
+  
+  // Visual ball
+  const ball = new THREE.Mesh(handleBallGeometry, handleBallMaterial);
+  ball.castShadow = true;
+  ball.receiveShadow = true;
+  group.add(ball);
+  
+  // Larger hit volume
+  const hitVolume = new THREE.Mesh(handleHitGeometry, handleHitMaterial);
+  hitVolume.userData.isHandle = true;
+  hitVolume.userData.parentGroup = group; // ref to move visual if needed
+  group.add(hitVolume);
+  
+  group.position.copy(position);
+  if (rotation) group.rotation.set(rotation.x, rotation.y, rotation.z);
+  
+  cubeGroup.add(group);
+  return hitVolume; // Return the hit volume for raycasting
+}
+
 // Front handle
-const handleLineFront = new THREE.BufferGeometry();
-handleLineFront.setFromPoints([
+const handleLineFront = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, -cubeSize/2, cubeSize/2),
   new THREE.Vector3(0, -cubeSize/2, cubeSize/2 + 0.6)
 ]);
-const handleLineMatFront = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshFront = new THREE.Line(handleLineFront, handleLineMatFront);
-handleLineMeshFront.userData.isHandle = true;
-cubeGroup.add(handleLineMeshFront);
-
-const handleBallFront = new THREE.Mesh(handleBallGeometry, handleBallMaterial);
-handleBallFront.position.set(0, -cubeSize/2, cubeSize/2 + 0.6);
-handleBallFront.castShadow = true;
-handleBallFront.receiveShadow = true;
-handleBallFront.userData.isHandle = true;
-cubeGroup.add(handleBallFront);
+cubeGroup.add(new THREE.Line(handleLineFront, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitFront = createHandle(new THREE.Vector3(0, -cubeSize/2, cubeSize/2 + 0.6));
 
 // Back handle
-const handleLineBack = new THREE.BufferGeometry();
-handleLineBack.setFromPoints([
+const handleLineBack = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(0, -cubeSize/2, -cubeSize/2),
   new THREE.Vector3(0, -cubeSize/2, -cubeSize/2 - 0.6)
 ]);
-const handleLineMatBack = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshBack = new THREE.Line(handleLineBack, handleLineMatBack);
-handleLineMeshBack.userData.isHandle = true;
-cubeGroup.add(handleLineMeshBack);
-
-const handleBallBack = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallBack.position.set(0, -cubeSize/2, -cubeSize/2 - 0.6);
-handleBallBack.castShadow = true;
-handleBallBack.receiveShadow = true;
-handleBallBack.userData.isHandle = true;
-cubeGroup.add(handleBallBack);
+cubeGroup.add(new THREE.Line(handleLineBack, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitBack = createHandle(new THREE.Vector3(0, -cubeSize/2, -cubeSize/2 - 0.6));
 
 // Left handle
-const handleLineLeft = new THREE.BufferGeometry();
-handleLineLeft.setFromPoints([
+const handleLineLeft = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(-cubeSize/2, -cubeSize/2, 0),
   new THREE.Vector3(-cubeSize/2 - 0.6, -cubeSize/2, 0)
 ]);
-const handleLineMatLeft = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshLeft = new THREE.Line(handleLineLeft, handleLineMatLeft);
-handleLineMeshLeft.userData.isHandle = true;
-cubeGroup.add(handleLineMeshLeft);
-
-const handleBallLeft = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallLeft.position.set(-cubeSize/2 - 0.6, -cubeSize/2, 0);
-handleBallLeft.castShadow = true;
-handleBallLeft.receiveShadow = true;
-handleBallLeft.userData.isHandle = true;
-cubeGroup.add(handleBallLeft);
+cubeGroup.add(new THREE.Line(handleLineLeft, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitLeft = createHandle(new THREE.Vector3(-cubeSize/2 - 0.6, -cubeSize/2, 0));
 
 // Right handle
-const handleLineRight = new THREE.BufferGeometry();
-handleLineRight.setFromPoints([
+const handleLineRight = new THREE.BufferGeometry().setFromPoints([
   new THREE.Vector3(cubeSize/2, -cubeSize/2, 0),
   new THREE.Vector3(cubeSize/2 + 0.6, -cubeSize/2, 0)
 ]);
-const handleLineMatRight = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshRight = new THREE.Line(handleLineRight, handleLineMatRight);
-handleLineMeshRight.userData.isHandle = true;
-cubeGroup.add(handleLineMeshRight);
+cubeGroup.add(new THREE.Line(handleLineRight, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitRight = createHandle(new THREE.Vector3(cubeSize/2 + 0.6, -cubeSize/2, 0));
 
-const handleBallRight = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallRight.position.set(cubeSize/2 + 0.6, -cubeSize/2, 0);
-handleBallRight.castShadow = true;
-handleBallRight.receiveShadow = true;
-handleBallRight.userData.isHandle = true;
-cubeGroup.add(handleBallRight);
-
-// Create array of all handle balls for raycasting
-const handleBalls = [handleBallFront, handleBallBack, handleBallLeft, handleBallRight];
+// Create array of all handle hit volumes for raycasting
+const handleBalls = [handleHitFront, handleHitBack, handleHitLeft, handleHitRight];
 
 // Don't create faces immediately - wait for model to load or use fallback
 // createFace calls are now in createFallbackCube() function
@@ -1763,6 +1752,60 @@ async function handleVRInputStart(event) {
   }
 
   // 4. Marker placement now initiated via UI controls
+
+  // 5. Check for DIRECT TOUCH (Hands Only) - Proximity Precedence
+  if (source.userData.inputSource && source.userData.inputSource.hand) {
+    const directHit = checkDirectTouch(source);
+    if (directHit) {
+      if (directHit.isHandle) {
+        vrDraggedInfo = {
+          handle: directHit.object,
+          source: source,
+          isRotating: true,
+          isDragging: false,
+          dot: null
+        };
+        source.userData.lastHandPos = new THREE.Vector3().setFromMatrixPosition(source.joints['index-finger-tip'].matrixWorld);
+      } else {
+        vrDraggedInfo = {
+          dot: directHit.object, // This is the dot mesh (or pickHelper)
+          source: source,
+          isDragging: true, // Use dragging logic but we'll override position content in animate
+          isRotating: false,
+          handle: null
+        };
+        // For direct touch, we want to snap to finger, so standard drag logic works if we update 'point' correctly
+      }
+      return;
+    }
+  }
+}
+
+// Check if index finger is touching a relevant object
+function checkDirectTouch(handSource) {
+  if (!handSource.joints || !handSource.joints['index-finger-tip']) return null;
+  
+  const indexTip = handSource.joints['index-finger-tip'];
+  const tipPos = new THREE.Vector3().setFromMatrixPosition(indexTip.matrixWorld);
+  const touchThreshold = 0.08; // 8cm radius
+  
+  // Check Handles
+  for (const handle of handleBalls) {
+    const handlePos = new THREE.Vector3().setFromMatrixPosition(handle.matrixWorld);
+    if (tipPos.distanceTo(handlePos) < touchThreshold + 0.1) { // Larger threshold for handles
+       return { object: handle, isHandle: true };
+    }
+  }
+  
+  // Check Dots
+  for (const dot of dots) {
+    const dotPos = new THREE.Vector3().setFromMatrixPosition(dot.mesh.matrixWorld);
+    if (tipPos.distanceTo(dotPos) < touchThreshold) {
+      return { object: dot, isHandle: false };
+    }
+  }
+  
+  return null;
 }
 
 function handleVRInputEnd(event) {
@@ -2570,6 +2613,18 @@ function animate() {
       if (isLeft && vrHoverLinesLeft) { cubeGroup.remove(vrHoverLinesLeft); vrHoverLinesLeft = null; }
       if (!isLeft && vrHoverLinesRight) { cubeGroup.remove(vrHoverLinesRight); vrHoverLinesRight = null; }
 
+      // Direct Touch Visual Feedback
+      if (isHand) {
+          const directHit = checkDirectTouch(source);
+          if (directHit && !directHit.isHandle && directHit.object) {
+             // Scale up dot slightly when touching
+             if (directHit.object.mesh) {
+                // Pulse effect or highlight could go here
+                // For now, relies on the fact that you can grab it
+             }
+          }
+      }
+
       if (!vrDraggedInfo.isDragging && !vrDraggedInfo.isRotating) {
           const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
           if (point) {
@@ -2582,6 +2637,56 @@ function animate() {
     });
 
     // --- UNIFIED DRAGGING AND ROTATION LOGIC ---
+    // Handle Direct Touch Dragging (override raycasting if direct touch is active)
+    if (vrDraggedInfo.isDragging && vrDraggedInfo.source && vrDraggedInfo.source.joints) {
+       // It is a hand drag - check if it's "Direct" mode (close proximity)
+       // We can assume if they started a drag with hand, and are close, it is direct.
+       // Or simpler: Just always use index tip position if valid
+       const indexTip = vrDraggedInfo.source.joints['index-finger-tip'];
+       if (indexTip) {
+          const tipPos = new THREE.Vector3().setFromMatrixPosition(indexTip.matrixWorld);
+          
+          // Convert world tip pos to cube local
+          cubeGroup.updateWorldMatrix(true, false);
+          const localPoint = cubeGroup.worldToLocal(tipPos.clone());
+          
+          const halfSize = cubeSize / 2;
+          // Clamp to box
+          localPoint.x = Math.max(-halfSize, Math.min(halfSize, localPoint.x));
+          localPoint.y = Math.max(-halfSize, Math.min(halfSize, localPoint.y));
+          localPoint.z = Math.max(-halfSize, Math.min(halfSize, localPoint.z));
+          
+          // Apply to dot
+          if (vrDraggedInfo.dot) {
+             const dot = vrDraggedInfo.dot; // This might be { object: dot } wrapper if not careful? No, we set it to dot struct.
+             
+             // Fix structure matching: checkDirectTouch returns { object: dotStruct/Mesh }
+             // In handleVRInputStart, we set vrDraggedInfo.dot = directHit.object.
+             // If directHit.object was the dot struct (from dots array), good.
+             // My checkDirectTouch implementation returns: return { object: dot, isHandle: false }; where dot is the struct.
+             // So vrDraggedInfo.dot is the dot struct. Correct.
+             
+             // But checkDirectTouch logic above used `dot.mesh.matrixWorld`, so `dot` variable in loop IS the struct.
+             
+             // Update dot position
+             dot.mesh.position.copy(localPoint);
+             dot.shadow.position.set(localPoint.x, -halfSize, localPoint.z);
+             if (dot.pickHelper) dot.pickHelper.position.copy(localPoint);
+             
+             if (dot.crosshairs) {
+                  cubeGroup.remove(dot.crosshairs);
+                  dot.crosshairs = createHoverLines(localPoint, true);
+                  cubeGroup.add(dot.crosshairs);
+             }
+             
+             const n = normalizeTimbreCoords(localPoint);
+             dot.x = n.x; dot.y = n.y; dot.z = n.z;
+             updateDotAudio(dot);
+             
+             return; // Skip ray drag logic
+          }
+       }
+    }
     if (vrDraggedInfo.isRotating) {
       const source = vrDraggedInfo.source;
       if (source.userData.inputSource && source.userData.inputSource.hand) { // Hand rotation

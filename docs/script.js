@@ -12,7 +12,7 @@ if (!renderContainer) {
   document.body.insertBefore(renderContainer, document.querySelector('.spectro-section'));
 }
 
-const camera = new THREE.PerspectiveCamera(75, 1000/800, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(75, 1000 / 800, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setSize(1000, 800);
 renderer.shadowMap.enabled = true;
@@ -32,20 +32,22 @@ const controllerGrips = [];
 function createVRButton(isSupported) {
   const button = document.createElement('button');
   button.style.cssText = 'position: relative; padding: 12px 24px; border: 1px solid white; background: rgba(0,0,0,0.8); color: white; font-size: 13px; text-align: center; opacity: 0.9; outline: none; z-index: 999; cursor: pointer; font-family: sans-serif; margin: 10px;';
-  button.type = 'button';
-  
+
   if (!isSupported) {
     button.textContent = 'OPEN ON VR DEVICE TO ENTER VR';
-    button.setAttribute('aria-label', 'Open on VR device to enter VR');
     button.style.cursor = 'default';
     button.style.opacity = '0.6';
-    button.onclick = function() {
+    button.onclick = function () {
       alert('WebXR not available. Please open this page on a VR device like Meta Quest.');
     };
   } else {
     button.textContent = 'ENTER VR';
-    button.setAttribute('aria-label', 'Enter VR');
-    button.onclick = function() {
+    button.onclick = function () {
+      // Resume audio context immediately on user gesture
+      if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
+        Tone.start();
+      }
+
       if (renderer.xr.isPresenting) {
         if (hoverMarker) {
           hoverMarker.visible = false;
@@ -58,10 +60,8 @@ function createVRButton(isSupported) {
         }).then((session) => {
           renderer.xr.setSession(session);
           button.textContent = 'EXIT VR';
-            button.setAttribute('aria-label', 'Exit VR');
           session.addEventListener('end', () => {
             button.textContent = 'ENTER VR';
-              button.setAttribute('aria-label', 'Enter VR');
           });
         }).catch((err) => {
           console.error('Failed to start VR session:', err);
@@ -70,7 +70,7 @@ function createVRButton(isSupported) {
       }
     };
   }
-  
+
   return button;
 }
 
@@ -78,20 +78,20 @@ function createVRButton(isSupported) {
 if (navigator.xr) {
   navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
     console.log('VR supported:', supported);
-    
+
     let vrButton;
     // Try to use THREE.VRButton if available and supported, otherwise use custom
     if (supported && typeof THREE !== 'undefined' && THREE.VRButton) {
       try {
         vrButton = THREE.VRButton.createButton(renderer);
-      } catch(e) {
+      } catch (e) {
         console.log('THREE.VRButton failed, using custom button');
         vrButton = createVRButton(supported);
       }
     } else {
       vrButton = createVRButton(supported);
     }
-    
+
     const vrContainer = document.getElementById('vr-button-container');
     console.log('VR container found:', vrContainer);
     if (vrContainer) {
@@ -148,6 +148,7 @@ function setupController(index) {
   controller.add(line);
 
   controller.addEventListener('connected', (event) => {
+    console.log(`Controller ${index} connected`, event.data);
     controller.userData.inputSource = event.data;
     if (line) {
       const hasHand = event.data && event.data.hand;
@@ -180,19 +181,13 @@ const hands = [];
 const handModels = [];
 
 // Hand tracking setup
+const handModelFactory = new THREE.XRHandModelFactory();
+
 function setupHand(index) {
   const hand = renderer.xr.getHand(index);
-  hand.addEventListener('pinchstart', onHandPinchStart);
-  hand.addEventListener('pinchend', onHandPinchEnd);
+  hand.add(handModelFactory.createHandModel(hand, 'mesh'));
   scene.add(hand);
   hands[index] = hand;
-  
-  // Store references to joint spheres - they'll be created dynamically when hand connects
-  handModels[index] = {
-    spheres: {},
-    pointerRay: null
-  };
-  
   return hand;
 }
 
@@ -249,8 +244,8 @@ function normalizeTimbreCoords(point) {
 
 // Create an invisible cube that matches the volume for raycasting
 const invisibleGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-const invisibleMaterial = new THREE.MeshBasicMaterial({ 
-  transparent: true, 
+const invisibleMaterial = new THREE.MeshBasicMaterial({
+  transparent: true,
   opacity: 0,
   side: THREE.DoubleSide // Detect from both inside and outside
 });
@@ -266,43 +261,43 @@ cubeGroup.add(wireframeBox);
 
 // Load the GLB model
 const loader = new THREE.GLTFLoader();
-loader.load('cube_transparent_artistic_reference.glb', function(gltf) {
+loader.load('cube_transparent_artistic_reference.glb', function (gltf) {
   loadedModel = gltf.scene;
-  
+
   // Scale and position the model
   const box = new THREE.Box3().setFromObject(loadedModel);
   const size = box.getSize(new THREE.Vector3());
   const scale = cubeSize / Math.max(size.x, size.y, size.z);
   loadedModel.scale.setScalar(scale);
-  
+
   // Center the model
   const center = box.getCenter(new THREE.Vector3());
   loadedModel.position.sub(center.multiplyScalar(scale));
-  
+
   // Make top and front faces more transparent for better visibility
-  loadedModel.traverse(function(child) {
+  loadedModel.traverse(function (child) {
     if (child.isMesh) {
       // Hide all faces by default
       child.visible = false;
     }
   });
-  
+
   cubeGroup.add(loadedModel);
-  
+
   // Create the three visible walls
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
-}, undefined, function(error) {
+  createFace(new THREE.Vector3(-cubeSize / 2, 0, 0), new THREE.Vector3(0, -Math.PI / 2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
+  createFace(new THREE.Vector3(0, -cubeSize / 2, 0), new THREE.Vector3(-Math.PI / 2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
+  createFace(new THREE.Vector3(0, 0, -cubeSize / 2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
+}, undefined, function (error) {
   console.error('Error loading GLB model:', error);
   // Fallback to creating plane faces if model fails to load
   createFallbackCube();
 });
 
 function createFallbackCube() {
-  createFace(new THREE.Vector3(-cubeSize/2, 0, 0), new THREE.Vector3(0, -Math.PI/2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
-  createFace(new THREE.Vector3(0, -cubeSize/2, 0), new THREE.Vector3(-Math.PI/2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
-  createFace(new THREE.Vector3(0, 0, -cubeSize/2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
+  createFace(new THREE.Vector3(-cubeSize / 2, 0, 0), new THREE.Vector3(0, -Math.PI / 2, 0), 0x00ff88, 'Brightness × Attack', new THREE.Vector3(-1, 0, 0));
+  createFace(new THREE.Vector3(0, -cubeSize / 2, 0), new THREE.Vector3(-Math.PI / 2, 0, 0), 0xff6b9d, 'Spectral Flux × Attack', new THREE.Vector3(0, -1, 0));
+  createFace(new THREE.Vector3(0, 0, -cubeSize / 2), new THREE.Vector3(0, Math.PI, 0), 0xc44569, 'Spectral Flux × Brightness', new THREE.Vector3(0, 0, -1));
 }
 
 function createFace(position, rotation, color, label, normalVector) {
@@ -340,7 +335,7 @@ function createFace(position, rotation, color, label, normalVector) {
 
   // Add glowing edge lines to the face
   const edgeGeometry = new THREE.EdgesGeometry(geometry);
-  const edgeMaterial = new THREE.LineBasicMaterial({ 
+  const edgeMaterial = new THREE.LineBasicMaterial({
     color: color,
     linewidth: 2
   });
@@ -353,10 +348,11 @@ function createFace(position, rotation, color, label, normalVector) {
     face.visible = false;
     edges.visible = false;
   }
-  
+
   return face;
 }
 
+// Create rotation handles - line with ball at the end on all four sides
 // Create rotation handles - line with ball at the end on all four sides
 const handleBallGeometry = new THREE.SphereGeometry(0.12, 32, 32);
 const handleBallMaterial = new THREE.MeshPhysicalMaterial({
@@ -366,80 +362,68 @@ const handleBallMaterial = new THREE.MeshPhysicalMaterial({
   emissive: 0x665500
 });
 
-// Front handle
-const handleLineFront = new THREE.BufferGeometry();
-handleLineFront.setFromPoints([
-  new THREE.Vector3(0, -cubeSize/2, cubeSize/2),
-  new THREE.Vector3(0, -cubeSize/2, cubeSize/2 + 0.6)
-]);
-const handleLineMatFront = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshFront = new THREE.Line(handleLineFront, handleLineMatFront);
-handleLineMeshFront.userData.isHandle = true;
-cubeGroup.add(handleLineMeshFront);
+// invisible hit volume for easier grabbing
+const handleHitGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+const handleHitMaterial = new THREE.MeshBasicMaterial({
+  visible: false
+});
 
-const handleBallFront = new THREE.Mesh(handleBallGeometry, handleBallMaterial);
-handleBallFront.position.set(0, -cubeSize/2, cubeSize/2 + 0.6);
-handleBallFront.castShadow = true;
-handleBallFront.receiveShadow = true;
-handleBallFront.userData.isHandle = true;
-cubeGroup.add(handleBallFront);
+function createHandle(position, rotation) {
+  const group = new THREE.Group();
+
+  // Visual ball
+  const ball = new THREE.Mesh(handleBallGeometry, handleBallMaterial);
+  ball.castShadow = true;
+  ball.receiveShadow = true;
+  group.add(ball);
+
+  // Larger hit volume
+  const hitVolume = new THREE.Mesh(handleHitGeometry, handleHitMaterial);
+  hitVolume.userData.isHandle = true;
+  hitVolume.userData.parentGroup = group; // ref to move visual if needed
+  group.add(hitVolume);
+
+  group.position.copy(position);
+  if (rotation) group.rotation.set(rotation.x, rotation.y, rotation.z);
+
+  cubeGroup.add(group);
+  return hitVolume; // Return the hit volume for raycasting
+}
+
+// Front handle
+const handleLineFront = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0, -cubeSize / 2, cubeSize / 2),
+  new THREE.Vector3(0, -cubeSize / 2, cubeSize / 2 + 0.6)
+]);
+cubeGroup.add(new THREE.Line(handleLineFront, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitFront = createHandle(new THREE.Vector3(0, -cubeSize / 2, cubeSize / 2 + 0.6));
 
 // Back handle
-const handleLineBack = new THREE.BufferGeometry();
-handleLineBack.setFromPoints([
-  new THREE.Vector3(0, -cubeSize/2, -cubeSize/2),
-  new THREE.Vector3(0, -cubeSize/2, -cubeSize/2 - 0.6)
+const handleLineBack = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0, -cubeSize / 2, -cubeSize / 2),
+  new THREE.Vector3(0, -cubeSize / 2, -cubeSize / 2 - 0.6)
 ]);
-const handleLineMatBack = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshBack = new THREE.Line(handleLineBack, handleLineMatBack);
-handleLineMeshBack.userData.isHandle = true;
-cubeGroup.add(handleLineMeshBack);
-
-const handleBallBack = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallBack.position.set(0, -cubeSize/2, -cubeSize/2 - 0.6);
-handleBallBack.castShadow = true;
-handleBallBack.receiveShadow = true;
-handleBallBack.userData.isHandle = true;
-cubeGroup.add(handleBallBack);
+cubeGroup.add(new THREE.Line(handleLineBack, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitBack = createHandle(new THREE.Vector3(0, -cubeSize / 2, -cubeSize / 2 - 0.6));
 
 // Left handle
-const handleLineLeft = new THREE.BufferGeometry();
-handleLineLeft.setFromPoints([
-  new THREE.Vector3(-cubeSize/2, -cubeSize/2, 0),
-  new THREE.Vector3(-cubeSize/2 - 0.6, -cubeSize/2, 0)
+const handleLineLeft = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(-cubeSize / 2, -cubeSize / 2, 0),
+  new THREE.Vector3(-cubeSize / 2 - 0.6, -cubeSize / 2, 0)
 ]);
-const handleLineMatLeft = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshLeft = new THREE.Line(handleLineLeft, handleLineMatLeft);
-handleLineMeshLeft.userData.isHandle = true;
-cubeGroup.add(handleLineMeshLeft);
-
-const handleBallLeft = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallLeft.position.set(-cubeSize/2 - 0.6, -cubeSize/2, 0);
-handleBallLeft.castShadow = true;
-handleBallLeft.receiveShadow = true;
-handleBallLeft.userData.isHandle = true;
-cubeGroup.add(handleBallLeft);
+cubeGroup.add(new THREE.Line(handleLineLeft, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitLeft = createHandle(new THREE.Vector3(-cubeSize / 2 - 0.6, -cubeSize / 2, 0));
 
 // Right handle
-const handleLineRight = new THREE.BufferGeometry();
-handleLineRight.setFromPoints([
-  new THREE.Vector3(cubeSize/2, -cubeSize/2, 0),
-  new THREE.Vector3(cubeSize/2 + 0.6, -cubeSize/2, 0)
+const handleLineRight = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(cubeSize / 2, -cubeSize / 2, 0),
+  new THREE.Vector3(cubeSize / 2 + 0.6, -cubeSize / 2, 0)
 ]);
-const handleLineMatRight = new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 });
-const handleLineMeshRight = new THREE.Line(handleLineRight, handleLineMatRight);
-handleLineMeshRight.userData.isHandle = true;
-cubeGroup.add(handleLineMeshRight);
+cubeGroup.add(new THREE.Line(handleLineRight, new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 3 })));
+const handleHitRight = createHandle(new THREE.Vector3(cubeSize / 2 + 0.6, -cubeSize / 2, 0));
 
-const handleBallRight = new THREE.Mesh(handleBallGeometry.clone(), handleBallMaterial);
-handleBallRight.position.set(cubeSize/2 + 0.6, -cubeSize/2, 0);
-handleBallRight.castShadow = true;
-handleBallRight.receiveShadow = true;
-handleBallRight.userData.isHandle = true;
-cubeGroup.add(handleBallRight);
-
-// Create array of all handle balls for raycasting
-const handleBalls = [handleBallFront, handleBallBack, handleBallLeft, handleBallRight];
+// Create array of all handle hit volumes for raycasting
+const handleBalls = [handleHitFront, handleHitBack, handleHitLeft, handleHitRight];
 
 // Don't create faces immediately - wait for model to load or use fallback
 // createFace calls are now in createFallbackCube() function
@@ -476,8 +460,12 @@ camera.lookAt(0, 0, 0);
 
 // Position cube for VR - move it in front of user when in VR mode
 renderer.xr.addEventListener('sessionstart', () => {
+  console.log('VR Session Started');
   cubeGroup.position.set(0, 1.2, -2.5);
   cubeGroup.scale.setScalar(0.6);
+
+  if (hoverMarker) hoverMarker.visible = false;
+  if (hoverLines) hoverLines.visible = false;
 });
 
 renderer.xr.addEventListener('sessionend', () => {
@@ -495,88 +483,88 @@ function createAxisLabels() {
     labelCanvas.width = 512;
     labelCanvas.height = 128;
     const labelCtx = labelCanvas.getContext('2d');
-    
+
     // Clear with transparent background
     labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
-    
+
     // Draw glowing text
     labelCtx.font = 'bold 48px Arial';
     labelCtx.fillStyle = '#00ff88';
     labelCtx.textAlign = 'left';
     labelCtx.textBaseline = 'middle';
-    
+
     // Glow effect
     labelCtx.shadowColor = '#00ff88';
     labelCtx.shadowBlur = 20;
     labelCtx.shadowOffsetX = 0;
     labelCtx.shadowOffsetY = 0;
-    
+
     labelCtx.fillText(text + ' ' + arrow, 20, 64);
-    
+
     return labelCanvas;
   }
-  
+
   // Function to create vertical label canvas
   function createVerticalLabelCanvas(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 2048;
     const ctx = canvas.getContext('2d');
-    
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     // Draw text vertically (one letter per line)
     ctx.font = 'bold 85px Arial';
     ctx.fillStyle = '#00ff88';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
+
     ctx.shadowColor = '#00ff88';
     ctx.shadowBlur = 30;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
-    
+
     // Calculate spacing for vertical text
     const letters = text.split('');
     const letterSpacing = 110;
     const totalHeight = letters.length * letterSpacing;
     const startY = (canvas.height - totalHeight) / 2 + letterSpacing / 2;
-    
+
     letters.forEach((letter, i) => {
       ctx.fillText(letter, canvas.width / 2, startY + i * letterSpacing);
     });
-    
+
     return canvas;
   }
-  
+
   // Function to create large label canvas for plane labels
   function createLargeLabelCanvas(text) {
     const canvas = document.createElement('canvas');
     canvas.width = 1024;
     canvas.height = 256;
     const ctx = canvas.getContext('2d');
-    
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
+
     ctx.font = 'bold 80px Arial';
     ctx.fillStyle = '#00ff88';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    
+
     ctx.shadowColor = '#00ff88';
     ctx.shadowBlur = 30;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
-    
+
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-    
+
     return canvas;
   }
-  
+
   // Bottom edge - Spectral Flux label removed
-  
+
   // Left edge - Brightness label removed
-  
+
   // Left plane - Spectral Centroid label with two versions (front and back view)
   // Front view label: "Spectral Centroid"
   const brightnessLabelFront = createVerticalLabelCanvas('Spectral Centroid');
@@ -592,11 +580,11 @@ function createAxisLabels() {
   });
   const brightnessGeomFront = new THREE.PlaneGeometry(0.7, 3.2);
   const brightnessMeshFront = new THREE.Mesh(brightnessGeomFront, brightnessMaterialFront);
-  brightnessMeshFront.position.set(-cubeSize/2 + 0.1, 0, cubeSize/2 - 0.15);
+  brightnessMeshFront.position.set(-cubeSize / 2 + 0.1, 0, cubeSize / 2 - 0.15);
   brightnessMeshFront.rotation.y = Math.PI / 2;
   brightnessMeshFront.renderOrder = 999;
   cubeGroup.add(brightnessMeshFront);
-  
+
   // Back view label: "Spectral Centroid"
   const brightnessLabelBack = createVerticalLabelCanvas('Spectral Centroid');
   const brightnessTextureBack = new THREE.CanvasTexture(brightnessLabelBack);
@@ -611,18 +599,18 @@ function createAxisLabels() {
   });
   const brightnessGeomBack = new THREE.PlaneGeometry(0.7, 3.2);
   const brightnessMeshBack = new THREE.Mesh(brightnessGeomBack, brightnessMaterialBack);
-  brightnessMeshBack.position.set(-cubeSize/2 + 0.1, 0, cubeSize/2 - 0.15);
+  brightnessMeshBack.position.set(-cubeSize / 2 + 0.1, 0, cubeSize / 2 - 0.15);
   brightnessMeshBack.rotation.y = -Math.PI / 2; // Face opposite direction
   brightnessMeshBack.renderOrder = 999;
   cubeGroup.add(brightnessMeshBack);
-  
+
   // Bottom plane - Noisyness label with two versions (top and bottom view)
   // Top view label: "Noisyness"
   const transientsLabelTop = createLargeLabelCanvas('Noisyness');
   const transientsTextureTop = new THREE.CanvasTexture(transientsLabelTop);
   transientsTextureTop.needsUpdate = true;
-  const transientsMaterialTop = new THREE.MeshBasicMaterial({ 
-    map: transientsTextureTop, 
+  const transientsMaterialTop = new THREE.MeshBasicMaterial({
+    map: transientsTextureTop,
     transparent: true,
     alphaTest: 0.1,
     depthWrite: false,
@@ -631,18 +619,18 @@ function createAxisLabels() {
   });
   const transientsGeomTop = new THREE.PlaneGeometry(3.2, 0.7);
   const transientsMeshTop = new THREE.Mesh(transientsGeomTop, transientsMaterialTop);
-  transientsMeshTop.position.set(cubeSize/2 - 0.3, -cubeSize/2 + 0.1, 0);
+  transientsMeshTop.position.set(cubeSize / 2 - 0.3, -cubeSize / 2 + 0.1, 0);
   transientsMeshTop.rotation.x = -Math.PI / 2;
   transientsMeshTop.rotation.z = Math.PI / 2;
   transientsMeshTop.renderOrder = 999;
   cubeGroup.add(transientsMeshTop);
-  
+
   // Bottom view label: "Noisyness"
   const transientsLabelBottom = createLargeLabelCanvas('Noisyness');
   const transientsTextureBottom = new THREE.CanvasTexture(transientsLabelBottom);
   transientsTextureBottom.needsUpdate = true;
-  const transientsMaterialBottom = new THREE.MeshBasicMaterial({ 
-    map: transientsTextureBottom, 
+  const transientsMaterialBottom = new THREE.MeshBasicMaterial({
+    map: transientsTextureBottom,
     transparent: true,
     alphaTest: 0.1,
     depthWrite: false,
@@ -651,12 +639,12 @@ function createAxisLabels() {
   });
   const transientsGeomBottom = new THREE.PlaneGeometry(3.2, 0.7);
   const transientsMeshBottom = new THREE.Mesh(transientsGeomBottom, transientsMaterialBottom);
-  transientsMeshBottom.position.set(cubeSize/2 - 0.3, -cubeSize/2 + 0.1, 0);
+  transientsMeshBottom.position.set(cubeSize / 2 - 0.3, -cubeSize / 2 + 0.1, 0);
   transientsMeshBottom.rotation.x = Math.PI / 2; // Flip to face downward
   transientsMeshBottom.rotation.z = Math.PI / 2;
   transientsMeshBottom.renderOrder = 999;
   cubeGroup.add(transientsMeshBottom);
-  
+
   // Axis labels removed to clean up view
 }
 
@@ -669,56 +657,56 @@ function createFaceLabels() {
     labelCanvas.width = 4096;
     labelCanvas.height = 1024;
     const labelCtx = labelCanvas.getContext('2d');
-    
+
     labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
     labelCtx.font = 'bold 400px Arial';
     labelCtx.fillStyle = '#00ff88';
     labelCtx.textAlign = 'center';
     labelCtx.textBaseline = 'middle';
-    
+
     labelCtx.shadowColor = '#00ff88';
     labelCtx.shadowBlur = 60;
     labelCtx.shadowOffsetX = 0;
     labelCtx.shadowOffsetY = 0;
-    
+
     labelCtx.fillText(text, 2048, 512);
-    
+
     return labelCanvas;
   }
-  
+
   function createVerticalLabelCanvas(text) {
     const labelCanvas = document.createElement('canvas');
     labelCanvas.width = 1024;
     labelCanvas.height = 4096;
     const labelCtx = labelCanvas.getContext('2d');
-    
+
     labelCtx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
     labelCtx.font = 'bold 400px Arial';
     labelCtx.fillStyle = '#00ff88';
     labelCtx.textAlign = 'center';
     labelCtx.textBaseline = 'middle';
-    
+
     labelCtx.shadowColor = '#00ff88';
     labelCtx.shadowBlur = 60;
     labelCtx.shadowOffsetX = 0;
     labelCtx.shadowOffsetY = 0;
-    
+
     labelCtx.fillText(text, 512, 2048);
-    
+
     return labelCanvas;
   }
-  
+
   // Bottom/Front face - removed label
-  
+
   // Left/Brightness face - Label removed (now using vertical axis labels)
-  
+
   // Back/Transients face - "Inharmonicity" with two labels (front and back)
   // Front-facing label: "Inharmonicity"
   const backLabelFront = createLargeLabelCanvas('Inharmonicity');
   const backTextureFront = new THREE.CanvasTexture(backLabelFront);
   backTextureFront.needsUpdate = true;
-  const backMaterialFront = new THREE.MeshBasicMaterial({ 
-    map: backTextureFront, 
+  const backMaterialFront = new THREE.MeshBasicMaterial({
+    map: backTextureFront,
     transparent: true,
     alphaTest: 0.1,
     depthWrite: false,
@@ -727,19 +715,19 @@ function createFaceLabels() {
   });
   const backGeomFront = new THREE.PlaneGeometry(3.2, 0.7);
   const backMeshFront = new THREE.Mesh(backGeomFront, backMaterialFront);
-  backMeshFront.position.set(0, cubeSize/2 - 0.3, -cubeSize/2 + 0.1);
+  backMeshFront.position.set(0, cubeSize / 2 - 0.3, -cubeSize / 2 + 0.1);
   backMeshFront.renderOrder = 999;
   backMeshFront.userData.isSpectralFluxLabel = true;
   backMeshFront.userData.isFrontLabel = true;
   spectralFluxLabel = backMeshFront;
   cubeGroup.add(backMeshFront);
-  
+
   // Back-facing label: "Inharmonicity"
   const backLabelBack = createLargeLabelCanvas('Inharmonicity');
   const backTextureBack = new THREE.CanvasTexture(backLabelBack);
   backTextureBack.needsUpdate = true;
-  const backMaterialBack = new THREE.MeshBasicMaterial({ 
-    map: backTextureBack, 
+  const backMaterialBack = new THREE.MeshBasicMaterial({
+    map: backTextureBack,
     transparent: true,
     alphaTest: 0.1,
     depthWrite: false,
@@ -748,7 +736,7 @@ function createFaceLabels() {
   });
   const backGeomBack = new THREE.PlaneGeometry(3.2, 0.7);
   const backMeshBack = new THREE.Mesh(backGeomBack, backMaterialBack);
-  backMeshBack.position.set(0, cubeSize/2 - 0.3, -cubeSize/2 + 0.1);
+  backMeshBack.position.set(0, cubeSize / 2 - 0.3, -cubeSize / 2 + 0.1);
   backMeshBack.rotation.y = Math.PI; // Rotate 180 to face opposite direction
   backMeshBack.renderOrder = 999;
   backMeshBack.userData.isSpectralFluxLabel = true;
@@ -1002,17 +990,16 @@ function updateDotAudio(dot) {
   }
 
   const voice = dot.voice;
-  
+
   // Get normalized parameters (0-1 range)
   const rawX = THREE.MathUtils.clamp(dot.x, 0, 1);
   const rawY = THREE.MathUtils.clamp(dot.y, 0, 1);
   const rawZ = THREE.MathUtils.clamp(dot.z, 0, 1);
-  
+
   // One-sided mappings: 0 = pure/clean/dark, 1 = rough/noisy/bright
   const inharmonicity = rawX;      // 0 to 1
   const spectralCentroid = rawY;   // 0 (dark) to 1 (bright)
   const noisiness = rawZ;          // 0 (clean) to 1 (noisy)
-  const yPerceptual = Math.pow(spectralCentroid, 0.6);
 
   // === INHARMONICITY (X axis) ===
   // At 0: pure clarinet sample only
@@ -1021,7 +1008,7 @@ function updateDotAudio(dot) {
   voice.sampleGain.gain.linearRampTo(inharmonicity < 0.02
     ? 0.99
     : sampleLevel, 0.12);
-  
+
   const pitchShiftLevel = THREE.MathUtils.lerp(0, 0.5, inharmonicity);
   voice.pitchShiftGain.gain.linearRampTo(inharmonicity < 0.02
     ? 0
@@ -1037,6 +1024,7 @@ function updateDotAudio(dot) {
   const maxCutoff = 13500;
 
   // Perceptual-ish curve (pow) instead of strictly linear
+  const yPerceptual = Math.pow(spectralCentroid, 0.6);
   const cutoffBase = THREE.MathUtils.lerp(minCutoff, maxCutoff, yPerceptual);
 
   const cutoffFreq = THREE.MathUtils.clamp(cutoffBase + jitterState.shared, 500, 14500);
@@ -1056,7 +1044,7 @@ function updateDotAudio(dot) {
   // === NOISINESS (Z axis) ===
   const noiseLevel = THREE.MathUtils.clamp(0.01 + 0.45 * Math.pow(noisiness, 0.8) + jitterState.shared / 9000, 0.001, 0.55);
   voice.noiseGain.gain.linearRampTo(noiseLevel, 0.1);
-  
+
   const noiseQ = THREE.MathUtils.clamp(1.2 - noisiness * 0.8, 0.35, 2.0);
   voice.noiseFilter.Q.linearRampTo(noiseQ, 0.1);
 
@@ -1180,7 +1168,7 @@ function destroyDot(dot) {
     if (dot.pickHelper.material) dot.pickHelper.material.dispose();
     cubeGroup.remove(dot.pickHelper);
   }
-  
+
   // Dispose of crosshairs
   if (dot.crosshairs) {
     dot.crosshairs.traverse((child) => {
@@ -1189,11 +1177,11 @@ function destroyDot(dot) {
     });
     cubeGroup.remove(dot.crosshairs);
   }
-  
+
   // Remove from scene
   cubeGroup.remove(dot.mesh);
   cubeGroup.remove(dot.shadow);
-  
+
   // Remove from dots array
   const index = dots.indexOf(dot);
   if (index > -1) {
@@ -1285,7 +1273,7 @@ function addDotAtPoint(point) {
   if (!dot) {
     // Create a small cube instead of sphere
     const dotGeometry = new THREE.BoxGeometry(0.225, 0.225, 0.225);
-    const dotMaterial = new THREE.MeshPhysicalMaterial({ 
+    const dotMaterial = new THREE.MeshPhysicalMaterial({
       color: 0xff0088,
       emissive: 0xff0088,
       emissiveIntensity: 0.5,
@@ -1309,7 +1297,7 @@ function addDotAtPoint(point) {
     cubeGroup.add(shadowPlane);
 
     // Invisible (but pickable) helper to make selection easier
-    const pickGeom = new THREE.SphereGeometry(0.7, 16, 16);
+    const pickGeom = new THREE.SphereGeometry(0.7, 16, 16); // larger invisible hit target for easy picking
     const pickMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
@@ -1378,12 +1366,12 @@ function onMouseDown(event) {
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  
+
   lastMouseX = event.clientX;
   lastMouseY = event.clientY;
 
   raycaster.setFromCamera(mouse, camera);
-  
+
   // Check if any handle was clicked
   const handleIntersects = raycaster.intersectObjects(handleBalls);
   if (handleIntersects.length > 0) {
@@ -1391,14 +1379,14 @@ function onMouseDown(event) {
     event.preventDefault();
     return;
   }
-  
+
   const pickerMeshes = dots.map(d => d.pickHelper || d.mesh).filter(Boolean);
   const intersects = raycaster.intersectObjects(pickerMeshes);
-  
+
   if (intersects.length > 0) {
     const clickedMesh = intersects[0].object;
     draggedDot = dots.find(d => d.pickHelper === clickedMesh || d.mesh === clickedMesh);
-    
+
     if (draggedDot) {
       event.preventDefault();
     }
@@ -1417,7 +1405,7 @@ function onMouseDown(event) {
         bestDot = d;
       }
     });
-    if (bestDot && bestDist < 0.2) {
+    if (bestDot && bestDist < 0.2) { // ~20% of view; very forgiving pick radius
       draggedDot = bestDot;
       event.preventDefault();
     }
@@ -1442,7 +1430,6 @@ function onMouseMove(event) {
     draggingHandle = false;
     return;
   }
-  
   if (draggingHandle) return;
 
   if (draggedDot) {
@@ -1459,7 +1446,7 @@ function onMouseMove(event) {
     }
 
     // Update shadow position to follow the dot
-    draggedDot.shadow.position.set(intersectPoint.x, -cubeSize/2, intersectPoint.z);
+    draggedDot.shadow.position.set(intersectPoint.x, -cubeSize / 2, intersectPoint.z);
 
     // Update crosshairs position to follow the dot
     if (draggedDot.crosshairs) {
@@ -1477,7 +1464,7 @@ function onMouseMove(event) {
     updateDotAudio(draggedDot);
     return; // Skip hover logic while dragging
   }
-  
+
 }
 
 function onMouseUp(event) {
@@ -1488,20 +1475,20 @@ function onMouseUp(event) {
 // Scroll wheel to adjust depth (Z axis) of the marker
 function onMouseWheel(event) {
   if (dots.length === 0) return;
-  
+
   const dot = dots[0];
   if (!dot) return;
-  
+
   event.preventDefault();
-  
+
   const halfSize = cubeSize / 2;
   const step = cubeSize * 0.05; // 5% of cube size per scroll tick
   const delta = event.deltaY > 0 ? -step : step; // Scroll up = forward, down = back
-  
+
   // Update Z position (depth)
   const newZ = Math.max(-halfSize, Math.min(halfSize, dot.mesh.position.z + delta));
   dot.mesh.position.z = newZ;
-  
+
   // Update shadow and crosshairs
   dot.shadow.position.set(dot.mesh.position.x, -halfSize, newZ);
   if (dot.pickHelper) {
@@ -1512,27 +1499,27 @@ function onMouseWheel(event) {
     dot.crosshairs = createHoverLines(dot.mesh.position, true);
     cubeGroup.add(dot.crosshairs);
   }
-  
+
   // Update normalized coords
   const normalized = normalizeTimbreCoords(dot.mesh.position);
   dot.x = normalized.x;
   dot.y = normalized.y;
   dot.z = normalized.z;
-  
+
   updateDotAudio(dot);
 }
 
 // Keyboard controls for fine positioning
 function onKeyDown(event) {
   if (dots.length === 0) return;
-  
+
   const dot = dots[0];
   if (!dot) return;
-  
+
   const halfSize = cubeSize / 2;
   const step = event.shiftKey ? cubeSize * 0.1 : cubeSize * 0.03; // Shift = bigger steps
   let moved = false;
-  
+
   switch (event.key) {
     case 'ArrowLeft':
       dot.mesh.position.x = Math.max(-halfSize, dot.mesh.position.x - step);
@@ -1628,10 +1615,10 @@ function onKeyDown(event) {
       moved = true;
       break;
   }
-  
+
   if (moved) {
     event.preventDefault();
-    
+
     // Update shadow and crosshairs
     dot.shadow.position.set(dot.mesh.position.x, -halfSize, dot.mesh.position.z);
     if (dot.crosshairs) {
@@ -1639,13 +1626,13 @@ function onKeyDown(event) {
       dot.crosshairs = createHoverLines(dot.mesh.position, true);
       cubeGroup.add(dot.crosshairs);
     }
-    
+
     // Update normalized coords
     const normalized = normalizeTimbreCoords(dot.mesh.position);
     dot.x = normalized.x;
     dot.y = normalized.y;
     dot.z = normalized.z;
-    
+
     updateDotAudio(dot);
   }
 }
@@ -1663,36 +1650,36 @@ function createHoverLines(point, isPermanent = false) {
     depthTest: false,
     depthWrite: false
   };
-  
+
   // Create three simple lines from dot to each wall
   // Line to left wall (X = -cubeSize/2)
   const toLeftWall = new THREE.BufferGeometry();
   toLeftWall.setAttribute('position', new THREE.BufferAttribute(
     new Float32Array([
       point.x, point.y, point.z,
-      -cubeSize/2 - extension, point.y, point.z
+      -cubeSize / 2 - extension, point.y, point.z
     ]), 3));
   const leftLine = new THREE.Line(toLeftWall, new THREE.LineBasicMaterial(materialConfig));
   leftLine.renderOrder = 25;
   group.add(leftLine);
-  
+
   // Line to bottom wall (Y = -cubeSize/2)
   const toBottomWall = new THREE.BufferGeometry();
   toBottomWall.setAttribute('position', new THREE.BufferAttribute(
     new Float32Array([
       point.x, point.y, point.z,
-      point.x, -cubeSize/2 - extension, point.z
+      point.x, -cubeSize / 2 - extension, point.z
     ]), 3));
   const bottomLine = new THREE.Line(toBottomWall, new THREE.LineBasicMaterial(materialConfig));
   bottomLine.renderOrder = 25;
   group.add(bottomLine);
-  
+
   // Line to back wall (Z = -cubeSize/2)
   const toBackWall = new THREE.BufferGeometry();
   toBackWall.setAttribute('position', new THREE.BufferAttribute(
     new Float32Array([
       point.x, point.y, point.z,
-      point.x, point.y, -cubeSize/2 - extension
+      point.x, point.y, -cubeSize / 2 - extension
     ]), 3));
   const backLine = new THREE.Line(toBackWall, new THREE.LineBasicMaterial(materialConfig));
   backLine.renderOrder = 25;
@@ -1715,6 +1702,7 @@ let vrDraggedInfo = {
 
 // This single function will now handle the start of any primary VR action.
 async function handleVRInputStart(event) {
+  console.log('VR Input Start triggered', event);
   await ensureAudioStarted();
 
   const source = event.target;
@@ -1729,7 +1717,7 @@ async function handleVRInputStart(event) {
       const now = Date.now();
       if (now - lastButtonClickTime < BUTTON_CLICK_COOLDOWN) return;
       lastButtonClickTime = now;
-      
+
       const button = uiIntersects[0].object;
       handleVRUIClick(button); // Pass the button mesh directly
       return; // Stop further processing
@@ -1769,6 +1757,60 @@ async function handleVRInputStart(event) {
   }
 
   // 4. Marker placement now initiated via UI controls
+
+  // 5. Check for DIRECT TOUCH (Hands Only) - Proximity Precedence
+  if (source.userData.inputSource && source.userData.inputSource.hand) {
+    const directHit = checkDirectTouch(source);
+    if (directHit) {
+      if (directHit.isHandle) {
+        vrDraggedInfo = {
+          handle: directHit.object,
+          source: source,
+          isRotating: true,
+          isDragging: false,
+          dot: null
+        };
+        source.userData.lastHandPos = new THREE.Vector3().setFromMatrixPosition(source.joints['index-finger-tip'].matrixWorld);
+      } else {
+        vrDraggedInfo = {
+          dot: directHit.object, // This is the dot mesh (or pickHelper)
+          source: source,
+          isDragging: true, // Use dragging logic but we'll override position content in animate
+          isRotating: false,
+          handle: null
+        };
+        // For direct touch, we want to snap to finger, so standard drag logic works if we update 'point' correctly
+      }
+      return;
+    }
+  }
+}
+
+// Check if index finger is touching a relevant object
+function checkDirectTouch(handSource) {
+  if (!handSource.joints || !handSource.joints['index-finger-tip']) return null;
+
+  const indexTip = handSource.joints['index-finger-tip'];
+  const tipPos = new THREE.Vector3().setFromMatrixPosition(indexTip.matrixWorld);
+  const touchThreshold = 0.08; // 8cm radius
+
+  // Check Handles
+  for (const handle of handleBalls) {
+    const handlePos = new THREE.Vector3().setFromMatrixPosition(handle.matrixWorld);
+    if (tipPos.distanceTo(handlePos) < touchThreshold + 0.1) { // Larger threshold for handles
+      return { object: handle, isHandle: true };
+    }
+  }
+
+  // Check Dots
+  for (const dot of dots) {
+    const dotPos = new THREE.Vector3().setFromMatrixPosition(dot.mesh.matrixWorld);
+    if (tipPos.distanceTo(dotPos) < touchThreshold) {
+      return { object: dot, isHandle: false };
+    }
+  }
+
+  return null;
 }
 
 function handleVRInputEnd(event) {
@@ -1792,21 +1834,22 @@ function handleVRInputEnd(event) {
 
 // Helper to get a raycaster from either a hand or a controller
 function getVRRaycaster(source) {
-  const raycaster = new THREE.Raycaster();
-  let origin, direction;
+  if (!source) return null;
 
-  if (source.userData.inputSource && source.userData.inputSource.hand) { // It's a hand
-    const handRay = getHandRay(source);
-    if (!handRay) return null;
-    origin = handRay.origin;
-    direction = handRay.direction;
-  } else { // It's a controller
-    const tempMatrix = new THREE.Matrix4();
-    tempMatrix.identity().extractRotation(source.matrixWorld);
-    origin = new THREE.Vector3().setFromMatrixPosition(source.matrixWorld);
-    direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix);
-  }
-  
+  // In WebXR, the 'source' passed from event.target is usually the *TargetRaySpace* object (the controller)
+  // even for hands, if we listen to 'selectstart' on the controller.
+
+  // However, our checkDirectTouch (in handleVRInputStart) uses the JointSpace (hand).
+
+  const raycaster = new THREE.Raycaster();
+
+  // Use the native position/rotation of the source (controller/hand)
+  // This corresponds to the platform's preferred pointing ray.
+  const tempMatrix = new THREE.Matrix4();
+  tempMatrix.identity().extractRotation(source.matrixWorld);
+  const origin = new THREE.Vector3().setFromMatrixPosition(source.matrixWorld);
+  const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix);
+
   raycaster.set(origin, direction);
   return raycaster;
 }
@@ -1833,12 +1876,12 @@ function getIntersectionPointFromRay(raycaster, blockingObjects = []) {
   // Check if ray intersects the invisible cube at all
   const boxIntersects = raycaster.intersectObject(invisibleCube);
   if (boxIntersects.length === 0) return null;
-  
+
   // Use the FIRST intersection point (entry point into cube volume)
   const cubeHit = boxIntersects[0];
   const intersectPoint = cubeHit.point;
   const cubeDistance = cubeHit.distance;
-  
+
   // If any blocking objects (UI panels, etc.) are closer than the cube, ignore this hit
   if (blockingObjects.length > 0) {
     const epsilon = 0.002;
@@ -1850,26 +1893,26 @@ function getIntersectionPointFromRay(raycaster, blockingObjects = []) {
       }
     }
   }
-  
+
   // Transform to local cube coordinates
   const intersectLocal = intersectPoint.clone();
   intersectLocal.sub(cubeGroup.position);
   intersectLocal.applyQuaternion(cubeGroup.quaternion.clone().invert());
-  
+
   const halfSize = cubeSize / 2;
-  
+
   // Verify the point is within cube bounds (should be true if intersection worked)
   if (Math.abs(intersectLocal.x) > halfSize ||
-      Math.abs(intersectLocal.y) > halfSize ||
-      Math.abs(intersectLocal.z) > halfSize) {
+    Math.abs(intersectLocal.y) > halfSize ||
+    Math.abs(intersectLocal.z) > halfSize) {
     return null; // Safety check: point somehow outside bounds
   }
-  
+
   // Clamp to exact bounds (for floating point precision)
   intersectLocal.x = Math.max(-halfSize, Math.min(halfSize, intersectLocal.x));
   intersectLocal.y = Math.max(-halfSize, Math.min(halfSize, intersectLocal.y));
   intersectLocal.z = Math.max(-halfSize, Math.min(halfSize, intersectLocal.z));
-  
+
   return intersectLocal;
 }
 
@@ -1879,16 +1922,16 @@ function getHandRay(hand) {
   const indexIntermediate = hand.joints['index-finger-phalanx-intermediate'];
 
   if (!indexTip || !indexIntermediate) return null;
-  
+
   const origin = new THREE.Vector3();
   indexTip.getWorldPosition(origin);
-  
+
   const direction = new THREE.Vector3();
   const proximalPos = new THREE.Vector3();
   indexIntermediate.getWorldPosition(proximalPos);
 
   direction.subVectors(origin, proximalPos).normalize();
-  
+
   return { origin, direction, indexTip };
 }
 
@@ -2084,7 +2127,7 @@ for (let z = 0; z < SPECTRO_HEIGHT; z++) {
     vertices[3 * idx + 0] = SPECTRO_GEOMETRY_SIZE * SPECTRO_X_SCALE * (x - SPECTRO_WIDTH / 2) / SPECTRO_WIDTH;
     vertices[3 * idx + 1] = 0;
     vertices[3 * idx + 2] = SPECTRO_GEOMETRY_SIZE * SPECTRO_Z_SCALE * (z - SPECTRO_HEIGHT / 2) / SPECTRO_HEIGHT + SPECTRO_Z_OFFSET;
-    
+
     texCoords[2 * idx + 0] = x / (SPECTRO_WIDTH - 1);
     texCoords[2 * idx + 1] = z / (SPECTRO_HEIGHT - 1);
   }
@@ -2136,7 +2179,7 @@ class Matrix4x4 {
     this.elements = new Float32Array(16);
     this.loadIdentity();
   }
-  
+
   loadIdentity() {
     for (let i = 0; i < 16; i++) this.elements[i] = 0;
     this.elements[0] = 1;
@@ -2145,7 +2188,7 @@ class Matrix4x4 {
     this.elements[15] = 1;
     return this;
   }
-  
+
   translate(tx, ty, tz) {
     this.elements[12] += this.elements[0] * tx + this.elements[4] * ty + this.elements[8] * tz;
     this.elements[13] += this.elements[1] * tx + this.elements[5] * ty + this.elements[9] * tz;
@@ -2153,17 +2196,17 @@ class Matrix4x4 {
     this.elements[15] += this.elements[3] * tx + this.elements[7] * ty + this.elements[11] * tz;
     return this;
   }
-  
+
   rotate(angle, x, y, z) {
-    const mag = Math.sqrt(x*x + y*y + z*z);
+    const mag = Math.sqrt(x * x + y * y + z * z);
     const sinAngle = Math.sin(angle * Math.PI / 180.0);
     const cosAngle = Math.cos(angle * Math.PI / 180.0);
-    
+
     if (mag > 0) {
       x /= mag;
       y /= mag;
       z /= mag;
-      
+
       const xx = x * x;
       const yy = y * y;
       const zz = z * z;
@@ -2174,88 +2217,88 @@ class Matrix4x4 {
       const ys = y * sinAngle;
       const zs = z * sinAngle;
       const oneMinusCos = 1.0 - cosAngle;
-      
+
       const rotMat = new Matrix4x4();
-      
+
       rotMat.elements[0] = (oneMinusCos * xx) + cosAngle;
       rotMat.elements[1] = (oneMinusCos * xy) - zs;
       rotMat.elements[2] = (oneMinusCos * zx) + ys;
       rotMat.elements[3] = 0.0;
-      
+
       rotMat.elements[4] = (oneMinusCos * xy) + zs;
       rotMat.elements[5] = (oneMinusCos * yy) + cosAngle;
       rotMat.elements[6] = (oneMinusCos * yz) - xs;
       rotMat.elements[7] = 0.0;
-      
+
       rotMat.elements[8] = (oneMinusCos * zx) - ys;
       rotMat.elements[9] = (oneMinusCos * yz) + xs;
       rotMat.elements[10] = (oneMinusCos * zz) + cosAngle;
       rotMat.elements[11] = 0.0;
-      
+
       rotMat.elements[12] = 0.0;
       rotMat.elements[13] = 0.0;
       rotMat.elements[14] = 0.0;
       rotMat.elements[15] = 1.0;
-      
+
       const result = rotMat.multiply(this);
       this.elements = result.elements;
     }
     return this;
   }
-  
+
   multiply(other) {
     const result = new Matrix4x4();
     for (let i = 0; i < 4; i++) {
-      result.elements[i*4+0] = this.elements[i*4+0] * other.elements[0] + 
-                               this.elements[i*4+1] * other.elements[4] + 
-                               this.elements[i*4+2] * other.elements[8] + 
-                               this.elements[i*4+3] * other.elements[12];
-      result.elements[i*4+1] = this.elements[i*4+0] * other.elements[1] + 
-                               this.elements[i*4+1] * other.elements[5] + 
-                               this.elements[i*4+2] * other.elements[9] + 
-                               this.elements[i*4+3] * other.elements[13];
-      result.elements[i*4+2] = this.elements[i*4+0] * other.elements[2] + 
-                               this.elements[i*4+1] * other.elements[6] + 
-                               this.elements[i*4+2] * other.elements[10] + 
-                               this.elements[i*4+3] * other.elements[14];
-      result.elements[i*4+3] = this.elements[i*4+0] * other.elements[3] + 
-                               this.elements[i*4+1] * other.elements[7] + 
-                               this.elements[i*4+2] * other.elements[11] + 
-                               this.elements[i*4+3] * other.elements[15];
+      result.elements[i * 4 + 0] = this.elements[i * 4 + 0] * other.elements[0] +
+        this.elements[i * 4 + 1] * other.elements[4] +
+        this.elements[i * 4 + 2] * other.elements[8] +
+        this.elements[i * 4 + 3] * other.elements[12];
+      result.elements[i * 4 + 1] = this.elements[i * 4 + 0] * other.elements[1] +
+        this.elements[i * 4 + 1] * other.elements[5] +
+        this.elements[i * 4 + 2] * other.elements[9] +
+        this.elements[i * 4 + 3] * other.elements[13];
+      result.elements[i * 4 + 2] = this.elements[i * 4 + 0] * other.elements[2] +
+        this.elements[i * 4 + 1] * other.elements[6] +
+        this.elements[i * 4 + 2] * other.elements[10] +
+        this.elements[i * 4 + 3] * other.elements[14];
+      result.elements[i * 4 + 3] = this.elements[i * 4 + 0] * other.elements[3] +
+        this.elements[i * 4 + 1] * other.elements[7] +
+        this.elements[i * 4 + 2] * other.elements[11] +
+        this.elements[i * 4 + 3] * other.elements[15];
     }
     return result;
   }
-  
+
   perspective(fovy, aspect, nearZ, farZ) {
     const frustumH = Math.tan(fovy / 360.0 * Math.PI) * nearZ;
     const frustumW = frustumH * aspect;
     return this.frustum(-frustumW, frustumW, -frustumH, frustumH, nearZ, farZ);
   }
-  
+
   frustum(left, right, bottom, top, nearZ, farZ) {
     const deltaX = right - left;
     const deltaY = top - bottom;
     const deltaZ = farZ - nearZ;
-    
+
     if (nearZ <= 0 || farZ <= 0 || deltaX <= 0 || deltaY <= 0 || deltaZ <= 0)
       return this;
-    
+
     const frust = new Matrix4x4();
-    
+
     frust.elements[0] = 2.0 * nearZ / deltaX;
     frust.elements[1] = frust.elements[2] = frust.elements[3] = 0.0;
-    
+
     frust.elements[5] = 2.0 * nearZ / deltaY;
     frust.elements[4] = frust.elements[6] = frust.elements[7] = 0.0;
-    
+
     frust.elements[8] = (right + left) / deltaX;
     frust.elements[9] = (top + bottom) / deltaY;
     frust.elements[10] = -(nearZ + farZ) / deltaZ;
     frust.elements[11] = -1.0;
-    
+
     frust.elements[14] = -2.0 * nearZ * farZ / deltaZ;
     frust.elements[12] = frust.elements[13] = frust.elements[15] = 0.0;
-    
+
     const result = frust.multiply(this);
     this.elements = result.elements;
     return this;
@@ -2303,12 +2346,12 @@ let vrSpectrographTexture = null;
 
 function updateSpectrographTexture() {
   analyser.getByteFrequencyData(freqByteData);
-  
+
   // Upload texture row (like Chrome)
   gl.bindTexture(gl.TEXTURE_2D, spectroTexture);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, spectroYOffset, bufferLength, 1, gl.ALPHA, gl.UNSIGNED_BYTE, freqByteData);
-  
+
   // Increment AFTER writing (like Chrome)
   spectroYOffset = (spectroYOffset + 1) % SPECTRO_TEXTURE_HEIGHT;
 }
@@ -2316,46 +2359,46 @@ function updateSpectrographTexture() {
 function drawSpectrograph() {
   requestAnimationFrame(drawSpectrograph);
   updateSpectrographTexture();
-  
+
   const canvas = spectroCanvas;
   const width = canvas.clientWidth || canvas.width;
   const height = canvas.clientHeight || canvas.height;
-  
+
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
   }
   gl.viewport(0, 0, width, height);
-  
+
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  
+
   gl.useProgram(spectroProgram);
-  
+
   // Build MVP matrix (exact Chrome Music Lab approach)
   const aspect = width / height;
-  
+
   const projection = new Matrix4x4();
   projection.perspective(55, aspect, 1, 100);
-  
+
   const view = new Matrix4x4();
   view.translate(0, 0, -12.0);
-  
+
   const model = new Matrix4x4();
   model.rotate(cameraXRot, 1, 0, 0);
   model.rotate(cameraYRot, 0, 1, 0);
   model.rotate(cameraZRot, 0, 0, 1);
   model.translate(cameraXT, cameraYT, cameraZT);
-  
+
   // Compute MVP: model * view * projection
   let mvp = model.multiply(view);
   mvp = mvp.multiply(projection);
-  
+
   gl.uniformMatrix4fv(worldViewProjectionLoc, false, mvp.elements);
-  
+
   // Set uniforms
   const normalizedYOffset = spectroYOffset / (SPECTRO_TEXTURE_HEIGHT - 1);
   const discretizedYOffset = Math.floor(normalizedYOffset * (SPECTRO_HEIGHT - 1)) / (SPECTRO_HEIGHT - 1);
-  
+
   gl.uniform1i(vertexFrequencyDataLoc, 0);
   gl.uniform1f(vertexYOffsetLoc, discretizedYOffset);
   gl.uniform1f(verticalScaleLoc, SPECTRO_VERTICAL_SCALE);
@@ -2363,18 +2406,18 @@ function drawSpectrograph() {
   gl.uniform4fv(foregroundColorLoc, [0, 0.7, 0, 1]);
   gl.uniform4fv(backgroundColorLoc, [0.0, 0.0, 0.0, 1]);
   gl.uniform1f(yoffsetLoc, normalizedYOffset);
-  
+
   // Bind VBO
   gl.bindBuffer(gl.ARRAY_BUFFER, spectroVBO);
   gl.enableVertexAttribArray(gPositionLoc);
   gl.vertexAttribPointer(gPositionLoc, 3, gl.FLOAT, false, 0, 0);
   gl.enableVertexAttribArray(gTexCoord0Loc);
   gl.vertexAttribPointer(gTexCoord0Loc, 2, gl.FLOAT, false, 0, vboTexCoordOffset);
-  
+
   // Draw
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, spectroIBO);
   gl.drawElements(gl.TRIANGLES, spectroNumIndices, gl.UNSIGNED_SHORT, 0);
-  
+
   gl.disableVertexAttribArray(gPositionLoc);
   gl.disableVertexAttribArray(gTexCoord0Loc);
 }
@@ -2384,13 +2427,13 @@ drawSpectrograph();
 
 function createVRUI() {
   if (vrUIPanel) return; // Already created
-  
+
   // Create 3D button panel
   const panelGroup = new THREE.Group();
   const buttonWidth = 0.3;
   const buttonHeight = 0.1;
   const buttonSpacing = 0.02;
-  
+
   function createButton(text, color, index) {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -2406,7 +2449,7 @@ function createVRUI() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-    
+
     const texture = new THREE.CanvasTexture(canvas);
     const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
     const geometry = new THREE.PlaneGeometry(buttonWidth, buttonHeight);
@@ -2415,12 +2458,12 @@ function createVRUI() {
     button.userData.buttonAction = text.toLowerCase();
     return button;
   }
-  
+
   const placeBtn = createButton('Place Marker', '#ffb300', 0);
   const downloadBtn = createButton('Download', '#4CAF50', 1);
   const clearBtn = createButton('Clear', '#f44336', 2);
   const resetBtn = createButton('Reset', '#2196F3', 3);
-  
+
   panelGroup.add(placeBtn);
   panelGroup.add(downloadBtn);
   panelGroup.add(clearBtn);
@@ -2429,13 +2472,14 @@ function createVRUI() {
   panelGroup.lookAt(camera.position);
   scene.add(panelGroup);
   vrUIPanel = panelGroup;
-  
+
   // Create floating spectrograph - will be positioned behind cube in animate loop
-  vrSpectrographTexture = new THREE.CanvasTexture(spectroRenderer.domElement);
+  // Use spectroCanvas directly since we are using raw WebGL context 'gl'
+  vrSpectrographTexture = new THREE.CanvasTexture(spectroCanvas);
   vrSpectrographTexture.minFilter = THREE.LinearFilter;
   vrSpectrographTexture.magFilter = THREE.LinearFilter;
   vrSpectrographTexture.encoding = THREE.sRGBEncoding;
-  const spectroMaterial = new THREE.MeshBasicMaterial({ 
+  const spectroMaterial = new THREE.MeshBasicMaterial({
     map: vrSpectrographTexture,
     side: THREE.DoubleSide,
     transparent: true,
@@ -2516,7 +2560,7 @@ function animate() {
   } else if (!renderer.xr.isPresenting && vrUIPanel) {
     removeVRUI();
   }
-  
+
   // Update spectrograph texture in VR
   if (vrSpectrographTexture && renderer.xr.isPresenting) {
     vrSpectrographTexture.needsUpdate = true;
@@ -2539,34 +2583,28 @@ function animate() {
       // Set visibility of default controller line vs hand visuals
       if (controllerLine) controllerLine.visible = !isHand;
       if (isHand && handModel) {
-          for (const jointName in handModel.spheres) {
-              const sphere = handModel.spheres[jointName];
-              if (sphere) sphere.visible = true;
-          }
+        for (const jointName in handModel.spheres) {
+          const sphere = handModel.spheres[jointName];
+          if (sphere) sphere.visible = true;
+        }
       }
 
       // Get ray for this source
       const raycaster = getVRRaycaster(source);
       if (!raycaster) {
-          // Hide pointer if no valid ray
-          if (handModel && handModel.pointerRay) handModel.pointerRay.visible = false;
-          return;
+        // Hide pointer if no valid ray
+        if (handModel && handModel.pointerRay) handModel.pointerRay.visible = false;
+        return;
       }
 
       // Update hand pointer ray
-      if (isHand && handModel) {
-        if (!handModel.pointerRay) {
-          const rayGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
-          const rayLine = new THREE.Line(rayGeometry, new THREE.LineBasicMaterial({ color: 0x88ff00, linewidth: 2, transparent: true, opacity: 0.8 }));
-          rayLine.scale.z = 5;
-          rayLine.renderOrder = 10;
-          scene.add(rayLine);
-          handModel.pointerRay = rayLine;
-        }
-        const pointerRay = handModel.pointerRay;
-        pointerRay.position.copy(raycaster.ray.origin);
-        pointerRay.quaternion.setFromUnitVectors(NEG_Z, raycaster.ray.direction);
-        pointerRay.visible = !vrDraggedInfo.isDragging && !vrDraggedInfo.isRotating;
+      // Native hands don't need a custom pointer ray; the system provides one usually.
+      // But if we want to visualize it for debugging or clarity:
+      if (isHand && controllerLine) {
+        // Optionally hide or show a line for hands. 
+        // For direct touch, we often hide the ray.
+        // Let's hide it to be cleaner, as requested.
+        controllerLine.visible = false;
       }
 
       // Update hover crosshairs (only if not dragging/rotating)
@@ -2576,18 +2614,80 @@ function animate() {
       if (isLeft && vrHoverLinesLeft) { cubeGroup.remove(vrHoverLinesLeft); vrHoverLinesLeft = null; }
       if (!isLeft && vrHoverLinesRight) { cubeGroup.remove(vrHoverLinesRight); vrHoverLinesRight = null; }
 
-      if (!vrDraggedInfo.isDragging && !vrDraggedInfo.isRotating) {
-          const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
-          if (point) {
-              const newHoverLines = createHoverLines(point);
-              cubeGroup.add(newHoverLines);
-              if (isLeft) vrHoverLinesLeft = newHoverLines;
-              else vrHoverLinesRight = newHoverLines;
+      // Direct Touch Visual Feedback
+      if (isHand) {
+        const directHit = checkDirectTouch(source);
+        if (directHit && !directHit.isHandle && directHit.object) {
+          // Scale up dot slightly when touching
+          if (directHit.object.mesh) {
+            // Pulse effect or highlight could go here
+            // For now, relies on the fact that you can grab it
           }
+        }
+      }
+
+      if (!vrDraggedInfo.isDragging && !vrDraggedInfo.isRotating) {
+        const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
+        if (point) {
+          const newHoverLines = createHoverLines(point);
+          cubeGroup.add(newHoverLines);
+          if (isLeft) vrHoverLinesLeft = newHoverLines;
+          else vrHoverLinesRight = newHoverLines;
+        }
       }
     });
 
     // --- UNIFIED DRAGGING AND ROTATION LOGIC ---
+    // Handle Direct Touch Dragging (override raycasting if direct touch is active)
+    if (vrDraggedInfo.isDragging && vrDraggedInfo.source && vrDraggedInfo.source.joints) {
+      // It is a hand drag - check if it's "Direct" mode (close proximity)
+      // We can assume if they started a drag with hand, and are close, it is direct.
+      // Or simpler: Just always use index tip position if valid
+      const indexTip = vrDraggedInfo.source.joints['index-finger-tip'];
+      if (indexTip) {
+        const tipPos = new THREE.Vector3().setFromMatrixPosition(indexTip.matrixWorld);
+
+        // Convert world tip pos to cube local
+        cubeGroup.updateWorldMatrix(true, false);
+        const localPoint = cubeGroup.worldToLocal(tipPos.clone());
+
+        const halfSize = cubeSize / 2;
+        // Clamp to box
+        localPoint.x = Math.max(-halfSize, Math.min(halfSize, localPoint.x));
+        localPoint.y = Math.max(-halfSize, Math.min(halfSize, localPoint.y));
+        localPoint.z = Math.max(-halfSize, Math.min(halfSize, localPoint.z));
+
+        // Apply to dot
+        if (vrDraggedInfo.dot) {
+          const dot = vrDraggedInfo.dot; // This might be { object: dot } wrapper if not careful? No, we set it to dot struct.
+
+          // Fix structure matching: checkDirectTouch returns { object: dotStruct/Mesh }
+          // In handleVRInputStart, we set vrDraggedInfo.dot = directHit.object.
+          // If directHit.object was the dot struct (from dots array), good.
+          // My checkDirectTouch implementation returns: return { object: dot, isHandle: false }; where dot is the struct.
+          // So vrDraggedInfo.dot is the dot struct. Correct.
+
+          // But checkDirectTouch logic above used `dot.mesh.matrixWorld`, so `dot` variable in loop IS the struct.
+
+          // Update dot position
+          dot.mesh.position.copy(localPoint);
+          dot.shadow.position.set(localPoint.x, -halfSize, localPoint.z);
+          if (dot.pickHelper) dot.pickHelper.position.copy(localPoint);
+
+          if (dot.crosshairs) {
+            cubeGroup.remove(dot.crosshairs);
+            dot.crosshairs = createHoverLines(localPoint, true);
+            cubeGroup.add(dot.crosshairs);
+          }
+
+          const n = normalizeTimbreCoords(localPoint);
+          dot.x = n.x; dot.y = n.y; dot.z = n.z;
+          updateDotAudio(dot);
+
+          return; // Skip ray drag logic
+        }
+      }
+    }
     if (vrDraggedInfo.isRotating) {
       const source = vrDraggedInfo.source;
       if (source.userData.inputSource && source.userData.inputSource.hand) { // Hand rotation
@@ -2638,7 +2738,7 @@ function animate() {
         }
       }
     }
-    
+
     // Update hand joint visualizations
     hands.forEach((hand, index) => {
       if (hand && hand.joints) {
@@ -2669,33 +2769,33 @@ function animate() {
         }
       }
     });
-    
+
     // Update VR UI and spectrograph positions to follow camera
     if (vrSpectrographPlane) {
       try {
         const xrCamera = renderer.xr.getCamera();
-        
+
         if (xrCamera) {
           // Get camera direction (where user is looking from)
           const cameraDirection = new THREE.Vector3();
           xrCamera.getWorldDirection(cameraDirection);
-          
+
           // Calculate vector from camera to cube
           const cameraToCube = new THREE.Vector3();
           cameraToCube.subVectors(cubeGroup.position, xrCamera.position).normalize();
-          
+
           // Position spectrograph behind cube (opposite side from camera)
           // This ensures it's always visible behind the cube relative to user
           const distanceBehindCube = 2.5;
           const spectroPos = cubeGroup.position.clone();
           spectroPos.add(cameraToCube.multiplyScalar(distanceBehindCube));
-          
+
           vrSpectrographPlane.position.copy(spectroPos);
           vrSpectrographPlane.lookAt(xrCamera.position); // Always face the user
-          
+
           // Update texture
           vrSpectrographTexture.needsUpdate = true;
-          
+
           // Keep UI panel in a fixed position relative to cube
           if (vrUIPanel) {
             const uiPos = cubeGroup.position.clone();
@@ -2728,34 +2828,34 @@ function animate() {
       hoverMarker.visible = false;
     }
   }
-  
+
   // Animate pulse orbs traveling along crosshairs
   const time = Date.now() * 0.0003; // Even slower (was 0.0005)
   const center = new THREE.Vector3(0, 0, 0); // Center of cube
   dots.forEach(dot => {
     if (dot.crosshairs && dot.crosshairs.userData.isPermanent) {
       const basePos = dot.crosshairs.userData.basePosition;
-      
+
       // Update pulse orbs position along each axis
       dot.crosshairs.children.forEach((child) => {
         if (child.userData.isPulse) {
           const axis = child.userData.axis;
           const t = (time + dot.id * 0.5 + axis * 2) % 1; // 0 to 1 repeating (not oscillating)
-          
+
           if (axis === 0) { // X axis - from center to left wall through dot
-            const totalDistance = center.x - (-cubeSize/2);
+            const totalDistance = center.x - (-cubeSize / 2);
             const targetX = center.x - t * totalDistance;
             child.position.set(targetX, basePos.y, basePos.z);
           } else if (axis === 1) { // Y axis - from center to bottom wall through dot
-            const totalDistance = center.y - (-cubeSize/2);
+            const totalDistance = center.y - (-cubeSize / 2);
             const targetY = center.y - t * totalDistance;
             child.position.set(basePos.x, targetY, basePos.z);
           } else if (axis === 2) { // Z axis - from center to back wall through dot
-            const totalDistance = center.z - (-cubeSize/2);
+            const totalDistance = center.z - (-cubeSize / 2);
             const targetZ = center.z - t * totalDistance;
             child.position.set(basePos.x, basePos.y, targetZ);
           }
-          
+
           // Fade in at start, fade out at end
           if (t < 0.1) {
             child.material.opacity = 0.6 * (t / 0.1);
@@ -2765,28 +2865,28 @@ function animate() {
             child.material.opacity = 0.6;
           }
         }
-        
+
         // Animate ripples at wall impact
         if (child.userData.isRipple) {
           const axis = child.userData.axis;
           const t = (time + dot.id * 0.5 + axis * 2) % 1;
-          
+
           // Trigger ripple when pulse hits wall (t near 1.0)
           if (t > 0.92) {
             const rippleProgress = (t - 0.92) / 0.08; // 0 to 1 over last 8%
             const scale = 1 + rippleProgress * 3; // Expand 1x to 4x
             child.scale.set(scale, scale, 1);
             child.material.opacity = 0.5 * (1 - rippleProgress); // Fade out
-            
+
             // Position ripple on the wall
             if (axis === 0) { // Left wall
-              child.position.set(-cubeSize/2, basePos.y, basePos.z);
+              child.position.set(-cubeSize / 2, basePos.y, basePos.z);
               child.rotation.y = Math.PI / 2;
             } else if (axis === 1) { // Bottom wall
-              child.position.set(basePos.x, -cubeSize/2, basePos.z);
+              child.position.set(basePos.x, -cubeSize / 2, basePos.z);
               child.rotation.x = Math.PI / 2;
             } else if (axis === 2) { // Back wall
-              child.position.set(basePos.x, basePos.y, -cubeSize/2);
+              child.position.set(basePos.x, basePos.y, -cubeSize / 2);
               child.rotation.y = 0;
             }
           } else {
@@ -2796,7 +2896,7 @@ function animate() {
       });
     }
   });
-  
+
   renderer.render(scene, camera);
 }
 
