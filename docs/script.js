@@ -43,35 +43,39 @@ function createVRButton(isSupported) {
   } else {
     button.textContent = 'ENTER VR';
     button.onclick = function () {
-      // Resume audio context immediately on user gesture
-      if (typeof Tone !== 'undefined' && Tone.context.state !== 'running') {
-        Tone.start();
-      }
+      // Initialize audio system on user gesture
+      ensureAudioStarted().then(() => {
+        if (renderer.xr.isPresenting) {
+          if (hoverMarker) {
+            hoverMarker.visible = false;
+          }
+          renderer.xr.getSession().end();
+        } else {
+          navigator.xr.requestSession('immersive-vr', {
+            requiredFeatures: ['local-floor'],
+            optionalFeatures: ['hand-tracking']
+          }).then((session) => {
+            renderer.xr.setSession(session);
+            button.textContent = 'EXIT VR';
 
-      if (renderer.xr.isPresenting) {
-        if (hoverMarker) {
-          hoverMarker.visible = false;
-        }
-        renderer.xr.getSession().end();
-      } else {
-        navigator.xr.requestSession('immersive-vr', {
-          requiredFeatures: ['local-floor'],
-          optionalFeatures: ['hand-tracking']
-        }).then((session) => {
-          renderer.xr.setSession(session);
-          button.textContent = 'EXIT VR';
-          session.addEventListener('end', () => {
-            button.textContent = 'ENTER VR';
+            // Hide Desktop UI
+            document.querySelectorAll('h1, #info, .main-container').forEach(el => el.style.display = 'none');
+
+            session.addEventListener('end', () => {
+              button.textContent = 'ENTER VR';
+              // Show Desktop UI
+              document.querySelectorAll('h1, #info, .main-container').forEach(el => el.style.display = '');
+            });
+          }).catch((err) => {
+            console.error('Failed to start VR session:', err);
+            alert('Failed to start VR: ' + err.message);
           });
-        }).catch((err) => {
-          console.error('Failed to start VR session:', err);
-          alert('Failed to start VR: ' + err.message);
-        });
-      }
-    };
-  }
+        }
+      });
+    }
 
-  return button;
+    return button;
+  }
 }
 
 // Always add VR button, regardless of support
@@ -80,17 +84,8 @@ if (navigator.xr) {
     console.log('VR supported:', supported);
 
     let vrButton;
-    // Try to use THREE.VRButton if available and supported, otherwise use custom
-    if (supported && typeof THREE !== 'undefined' && THREE.VRButton) {
-      try {
-        vrButton = THREE.VRButton.createButton(renderer);
-      } catch (e) {
-        console.log('THREE.VRButton failed, using custom button');
-        vrButton = createVRButton(supported);
-      }
-    } else {
-      vrButton = createVRButton(supported);
-    }
+    // Always use custom button to ensure audio init logic is handled correctly
+    vrButton = createVRButton(supported);
 
     const vrContainer = document.getElementById('vr-button-container');
     console.log('VR container found:', vrContainer);
@@ -181,11 +176,39 @@ const hands = [];
 const handModels = [];
 
 // Hand tracking setup
-const handModelFactory = new THREE.XRHandModelFactory();
+let handModelFactory;
+if (typeof THREE.XRHandModelFactory !== 'undefined') {
+  handModelFactory = new THREE.XRHandModelFactory();
+} else {
+  console.error('THREE.XRHandModelFactory is not defined. Hand tracking visualization will be disabled.');
+}
+
+// Configure factory to fetch profiles from CDN if needed (although unpkg script might handle default)
+if (handModelFactory) {
+  handModelFactory.setPath('https://unpkg.com/@webxr-input-profiles/assets@1.0.0/dist/profiles/');
+}
 
 function setupHand(index) {
   const hand = renderer.xr.getHand(index);
-  hand.add(handModelFactory.createHandModel(hand, 'mesh'));
+  if (handModelFactory) {
+    // Request 'mesh' profile to use official Oculus Hand Models (loaded locally via HandTracking.js factory)
+    const handModel = handModelFactory.createHandModel(hand, 'mesh');
+    hand.add(handModel);
+    handModels[index] = handModel;
+
+    // Listen for connection to store inputSource reliably
+    hand.addEventListener('connected', (event) => {
+      const xrInputSource = event.data;
+      hand.userData.inputSource = xrInputSource;
+
+      console.log(`Hand connected: ${xrInputSource.handedness}, Profiles: ${xrInputSource.profiles}`);
+
+      // Apply materials once mesh is ready
+      // The factory handles loading loop, we just need to catch when children arrive or traverse locally
+      // A simple interval check or re-traverse in animate might be safer, but let's try immediate traverse
+      // or traverse in animate loop for robustness.
+    });
+  }
   scene.add(hand);
   hands[index] = hand;
   return hand;
@@ -747,15 +770,30 @@ function createFaceLabels() {
 createFaceLabels();
 
 // --- TONE.JS SETUP ---
-const mixBus = new Tone.Gain(1);
-const analyser = Tone.context.createAnalyser();
-analyser.fftSize = 512;
-analyser.smoothingTimeConstant = 0.6;
-mixBus.connect(analyser);
-mixBus.connect(Tone.Destination);
+// Deferred initialization to avoid AudioContext warnings
+let mixBus, analyser, masterBus, reverb;
 
-const masterBus = new Tone.Gain(0.6);
-masterBus.connect(mixBus);
+function initAudioSystem() {
+  if (mixBus) return; // Already initialized
+
+  mixBus = new Tone.Gain(1);
+  analyser = Tone.context.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.6;
+  mixBus.connect(analyser);
+  mixBus.connect(Tone.Destination);
+
+  masterBus = new Tone.Gain(0.6);
+  masterBus.connect(mixBus);
+
+  const roomIR = createSmallRoomIR(0.28, 3.4);
+  reverb = new Tone.Convolver(roomIR);
+  reverb.normalize = true;
+  reverb.connect(mixBus);
+
+  // Initialize Spectrogram buffers now that analyser exists
+  initSpectrogram();
+}
 
 // Small-room convolution reverb (procedural IR for natural short space)
 function createSmallRoomIR(seconds = 0.25, decay = 3.0) {
@@ -773,11 +811,6 @@ function createSmallRoomIR(seconds = 0.25, decay = 3.0) {
   }
   return impulse;
 }
-
-const roomIR = createSmallRoomIR(0.28, 3.4);
-const reverb = new Tone.Convolver(roomIR);
-reverb.normalize = true;
-reverb.connect(mixBus);
 
 let isPlaying = true; // Global play/pause state
 
@@ -812,10 +845,16 @@ const clarinetBaseNote = 'G4';
 let audioReadyPromise = null;
 async function ensureAudioStarted() {
   if (Tone.context.state === 'running') {
+    // Ensure nodes are initialized even if context is running
+    initAudioSystem();
     return;
   }
   if (!audioReadyPromise) {
     audioReadyPromise = Tone.start()
+      .then(() => {
+        initAudioSystem();
+        console.log('Audio Context started and system initialized');
+      })
       .catch(err => {
         console.error('Tone.js failed to start audio context:', err);
         throw err;
@@ -1968,8 +2007,23 @@ document.addEventListener('keydown', onKeyDown);
 
 // ============ PURE WEBGL SPECTROGRAM (Chrome Music Lab Style) ============
 const spectroCanvas = document.getElementById('spectrograph');
-const bufferLength = analyser.frequencyBinCount;
-const dataArray = new Uint8Array(bufferLength);
+let bufferLength = 256; // Default fallback
+let dataArray = null;
+let freqByteData = null;
+
+function initSpectrogram() {
+  if (!analyser) return;
+  bufferLength = analyser.frequencyBinCount;
+  dataArray = new Uint8Array(bufferLength);
+  freqByteData = new Uint8Array(bufferLength);
+
+  // Re-create texture if needed since buffer size defined texture row width
+  if (gl) {
+    const textureData = new Uint8Array(bufferLength * SPECTRO_TEXTURE_HEIGHT);
+    gl.bindTexture(gl.TEXTURE_2D, spectroTexture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, bufferLength, SPECTRO_TEXTURE_HEIGHT, 0, gl.ALPHA, gl.UNSIGNED_BYTE, textureData);
+  }
+}
 
 // WebGL setup (preserveDrawingBuffer enables reliable downloads/screenshots)
 let gl = null;
@@ -1988,7 +2042,7 @@ const SPECTRO_TEXTURE_HEIGHT = 256;
 const SPECTRO_VERTICAL_SCALE = SPECTRO_GEOMETRY_SIZE / 3.5;
 
 // Frequency data buffer
-const freqByteData = new Uint8Array(bufferLength);
+// freqByteData moved to initSpectrogram
 let spectroYOffset = 0;
 
 // Compile shader helper
@@ -2163,13 +2217,15 @@ const spectroIBO = gl.createBuffer();
 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, spectroIBO);
 gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
-// Create texture for frequency data
+// Texture initialization moved to initSpectrogram (dependent on bufferLength)
 const spectroTexture = gl.createTexture();
 gl.bindTexture(gl.TEXTURE_2D, spectroTexture);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+// Initial placeholder texture
 const textureData = new Uint8Array(bufferLength * SPECTRO_TEXTURE_HEIGHT);
 gl.texImage2D(gl.TEXTURE_2D, 0, gl.ALPHA, bufferLength, SPECTRO_TEXTURE_HEIGHT, 0, gl.ALPHA, gl.UNSIGNED_BYTE, textureData);
 
@@ -2345,6 +2401,7 @@ let vrSpectrographPlane = null;
 let vrSpectrographTexture = null;
 
 function updateSpectrographTexture() {
+  if (!analyser || !freqByteData) return;
   analyser.getByteFrequencyData(freqByteData);
 
   // Upload texture row (like Chrome)
@@ -2425,75 +2482,146 @@ drawSpectrograph();
 
 // --- ANIMATION LOOP ---
 
-function createVRUI() {
-  if (vrUIPanel) return; // Already created
+// --- VR UI SYSTEM ---
 
-  // Create 3D button panel
-  const panelGroup = new THREE.Group();
-  const buttonWidth = 0.3;
-  const buttonHeight = 0.1;
-  const buttonSpacing = 0.02;
+// Interactive elements registry
+let vrInteractiveElements = []; // { mesh, type, action, onHover, onDown, onUp }
+let lastPokeTime = 0;
+const POKE_COOLDOWN = 500;
 
-  function createButton(text, color, index) {
+function registerInteractiveElement(mesh, type, action) {
+  vrInteractiveElements.push({
+    mesh, type, action,
+    isHovered: false,
+    isPressed: false
+  });
+}
+
+function unregisterInteractiveElements(group) {
+  // Remove elements belonging to this group
+  vrInteractiveElements = vrInteractiveElements.filter(el => {
+    let parent = el.mesh.parent;
+    while (parent) {
+      if (parent === group) return false;
+      parent = parent.parent;
+    }
+    return true;
+  });
+}
+
+
+
+// EXPANDED WRIST MENU (The "Smart Watch" Dashboard)
+let wristMenuGroup = null;
+function createWristMenu(hand) {
+  if (wristMenuGroup) return;
+
+  const group = new THREE.Group();
+
+  // 1. Backing Plate (Curved/Ergonomic)
+  const plateWidth = 0.28;
+  const plateHeight = 0.22; // Taller for grid + spectrum
+  const plateGeo = new THREE.BoxGeometry(plateWidth, plateHeight, 0.01);
+  const plateMat = new THREE.MeshPhongMaterial({
+    color: 0x222222,
+    specular: 0x111111,
+    transparent: true,
+    opacity: 0.9
+  });
+  const plate = new THREE.Mesh(plateGeo, plateMat);
+  group.add(plate);
+
+  // 2. Button Grid (2 Cols x 3 Rows)
+  // Buttons: Place, Play/Pause, Clear, Reset, Download, Exit
+  const btnW = 0.12;
+  const btnH = 0.05;
+  const gap = 0.01;
+  const startY = -0.02; // Shift down to make room for spectrum
+
+  function createWristBtn(text, color, col, row) {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 85;
+    canvas.width = 256; canvas.height = 100;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = color;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 32px Arial';
+    ctx.fillRect(0, 0, 256, 100);
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, 248, 92);
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 36px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(text, 128, 50);
 
-    const texture = new THREE.CanvasTexture(canvas);
-    const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
-    const geometry = new THREE.PlaneGeometry(buttonWidth, buttonHeight);
-    const button = new THREE.Mesh(geometry, material);
-    button.position.y = -index * (buttonHeight + buttonSpacing);
-    button.userData.buttonAction = text.toLowerCase();
-    return button;
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({ map: tex });
+    const geo = new THREE.PlaneGeometry(btnW, btnH);
+    const mesh = new THREE.Mesh(geo, mat);
+
+    // Grid Position
+    const x = (col === 0 ? -1 : 1) * (btnW / 2 + gap / 2);
+    const y = startY - (row * (btnH + gap));
+
+    mesh.position.set(x, y, 0.01); // Slightly raised
+    mesh.userData.buttonAction = text.toLowerCase();
+
+    registerInteractiveElement(mesh, 'button', text.toLowerCase());
+    group.add(mesh);
+    return mesh;
   }
 
-  const placeBtn = createButton('Place Marker', '#ffb300', 0);
-  const downloadBtn = createButton('Download', '#4CAF50', 1);
-  const clearBtn = createButton('Clear', '#f44336', 2);
-  const resetBtn = createButton('Reset', '#2196F3', 3);
+  // Row 0
+  createWristBtn('Place Marker', '#ffb300', 0, 0);
+  createWristBtn(isPlaying ? 'Pause' : 'Play', '#4CAF50', 1, 0);
 
-  panelGroup.add(placeBtn);
-  panelGroup.add(downloadBtn);
-  panelGroup.add(clearBtn);
-  panelGroup.add(resetBtn);
-  panelGroup.position.set(-1.5, 1.5, -1);
-  panelGroup.lookAt(camera.position);
-  scene.add(panelGroup);
-  vrUIPanel = panelGroup;
+  // Row 1
+  createWristBtn('Clear', '#f44336', 0, 1);
+  createWristBtn('Reset Pos', '#2196F3', 1, 1);
 
-  // Create floating spectrograph - will be positioned behind cube in animate loop
-  // Use spectroCanvas directly since we are using raw WebGL context 'gl'
+  // Row 2
+  createWristBtn('Download', '#9C27B0', 0, 2);
+  createWristBtn('Exit VR', '#555555', 1, 2);
+
+
+  // 3. Mini Spectrogram (Top of Wrist)
   vrSpectrographTexture = new THREE.CanvasTexture(spectroCanvas);
   vrSpectrographTexture.minFilter = THREE.LinearFilter;
-  vrSpectrographTexture.magFilter = THREE.LinearFilter;
-  vrSpectrographTexture.encoding = THREE.sRGBEncoding;
-  const spectroMaterial = new THREE.MeshBasicMaterial({
-    map: vrSpectrographTexture,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.95
-  });
-  const spectroGeometry = new THREE.PlaneGeometry(1.2, 0.7); // Larger for better visibility
-  vrSpectrographPlane = new THREE.Mesh(spectroGeometry, spectroMaterial);
-  // Initial position - will be updated each frame to stay behind cube
-  vrSpectrographPlane.position.set(0, 0, 3);
-  scene.add(vrSpectrographPlane);
+  const spectroMat = new THREE.MeshBasicMaterial({ map: vrSpectrographTexture, side: THREE.DoubleSide });
+  const spectroGeo = new THREE.PlaneGeometry(0.26, 0.08); // Wide, short screen
+  vrSpectrographPlane = new THREE.Mesh(spectroGeo, spectroMat);
+
+  vrSpectrographPlane.position.set(0, 0.07, 0.02); // Top area, slightly raised
+  // Tilt it up towards eyes
+  vrSpectrographPlane.rotation.x = -Math.PI / 6;
+
+  group.add(vrSpectrographPlane);
+
+  // Wrist attachment logic updates - parenting directly to hand
+  wristMenuGroup = group;
+  wristMenuGroup.userData.attachedHand = hand;
+
+  // Attach directly to the hand group!
+  // This ensures it follows the hand automatically.
+  hand.add(wristMenuGroup);
+
+  // Set Fixed Local Orientation (Relative to Hand Origin)
+  // W3C Hand Origin is typically Wrist.
+  // -Y is Back of Hand.
+  wristMenuGroup.position.set(0, -0.08, 0); // 8cm out from back of wrist
+  wristMenuGroup.rotation.set(-Math.PI / 2, 0, 0); // Rotate -90 on X to face up
+
+  // Add debug axes to verify local space
+  const axesHelper = new THREE.AxesHelper(0.1);
+  wristMenuGroup.add(axesHelper);
+
+  // Note: We don't need scene.add(wristMenuGroup) anymore because it's child of hand.
 }
+
+
 
 function removeVRUI() {
   if (vrUIPanel) {
+    unregisterInteractiveElements(vrUIPanel); // Clear registry
     scene.remove(vrUIPanel);
     vrUIPanel.traverse(child => {
       if (child.geometry) child.geometry.dispose();
@@ -2504,6 +2632,12 @@ function removeVRUI() {
     });
     vrUIPanel = null;
   }
+  if (wristMenuGroup) {
+    unregisterInteractiveElements(wristMenuGroup);
+    scene.remove(wristMenuGroup);
+    wristMenuGroup = null;
+  }
+
   if (vrSpectrographPlane) {
     scene.remove(vrSpectrographPlane);
     if (vrSpectrographPlane.geometry) vrSpectrographPlane.geometry.dispose();
@@ -2513,6 +2647,182 @@ function removeVRUI() {
     }
     vrSpectrographPlane = null;
     vrSpectrographTexture = null;
+  }
+}
+
+// Update VR Interactions (Poke & Wrist Menu)
+function updateVRInteractions() {
+  hands.forEach((hand, index) => {
+    if (!hand || !hand.visible || !hand.joints) return;
+
+    // 1. Wrist Menu Attachment (STRICT Left Hand Only)
+    // Do not rely on index 0. Only attach if we explicitly know it is the left hand.
+    let isLeft = false;
+    if (hand.userData.inputSource) {
+      isLeft = hand.userData.inputSource.handedness === 'left';
+    } else {
+      // Fallback: If userData not populated yet, try checking the session input sources directly if possible,
+      // or just skip this frame until loaded.
+      // However, to debug, let's log once if we are skipping.
+      // safe to return/skip.
+    }
+
+    if (isLeft && !wristMenuGroup) {
+      createWristMenu(hand);
+    }
+
+    // 3. Wrist Reparenting / Attachment Check
+    // We want to attach specifically to the 'wrist' joint, but it might not be available immediately on creation.
+    if (wristMenuGroup && wristMenuGroup.userData.attachedHand === hand) {
+      const wristJoint = hand.joints['wrist'];
+      if (wristJoint && wristMenuGroup.parent !== wristJoint) {
+        console.log("Reparenting Wrist Menu to Joint: wrist");
+
+        // Attach to the wrist joint so it follows perfectly
+        wristJoint.add(wristMenuGroup);
+
+        // Fix Scale mismatch from joint radius
+        wristMenuGroup.scale.set(1, 1, 1);
+
+        // Set Local Offset relative to the WRIST JOINT
+        // WebXR Wrist Joint: -Y is Back of Hand (usually).
+        wristMenuGroup.position.set(0, -0.05, 0); // 5cm out from back of wrist
+        wristMenuGroup.rotation.set(-Math.PI / 2, 0, 0); // Face up
+        wristMenuGroup.updateMatrixWorld();
+      }
+    }
+
+    // 2. Poke Check (Index Tip)
+    const indexTip = hand.joints['index-finger-tip'];
+    if (indexTip) {
+      // Ensure interaction sphere exists
+      if (!indexTip.userData.collider) {
+        const geom = new THREE.SphereGeometry(0.01, 8, 8); // 1cm radius tip
+        const mat = new THREE.MeshBasicMaterial({ color: 0xff0000, visible: false, wireframe: true });
+        const collider = new THREE.Mesh(geom, mat);
+        indexTip.add(collider);
+        indexTip.userData.collider = collider;
+        // console.log("Added Index Tip Collider");
+      }
+      // Use collider world pos for more accurate tip tracking
+      const tipPos = new THREE.Vector3().setFromMatrixPosition(indexTip.userData.collider ? indexTip.userData.collider.matrixWorld : indexTip.matrixWorld);
+
+      vrInteractiveElements.forEach(el => {
+        // Transform tip to Button Local Space
+        el.mesh.updateWorldMatrix(true, false);
+        const localTip = el.mesh.worldToLocal(tipPos.clone());
+
+        // Button dimensions (approx from creation)
+        // We assumed buttons are about 0.3 x 0.1 for main, 0.1 x 0.04 for wrist
+        // Let's use bounding box or geometry params if available, or simple bounds
+        // Simple bounds check: x: +/- width/2, y: +/- height/2, z: +/- depth (small)
+
+        const width = el.mesh.geometry.parameters.width;
+        const height = el.mesh.geometry.parameters.height;
+        const depthThreshold = 0.03;
+
+        const insideBox = (
+          Math.abs(localTip.x) < width / 2 &&
+          Math.abs(localTip.y) < height / 2 &&
+          Math.abs(localTip.z) < depthThreshold
+        );
+
+        if (insideBox) {
+          if (!el.isHovered) {
+            el.isHovered = true;
+            if (el.mesh.material.color) el.mesh.material.color.offsetHSL(0, 0, 0.1); // Highlight
+          }
+
+          // Check for 'press' (passing through plane z=0)
+          // Determine direction of entry? Or just simple z-depth check?
+          // "Press" if z is very close to 0 or slightly negative (pushed in)
+          if (localTip.z < 0.01 && localTip.z > -0.02) {
+            if (!el.isPressed) {
+              const now = Date.now();
+              if (now - lastPokeTime > POKE_COOLDOWN) {
+                el.isPressed = true;
+                lastPokeTime = now;
+                handleVRAction(el.action, el.mesh);
+              }
+            }
+          } else {
+            el.isPressed = false;
+          }
+
+        } else {
+          if (el.isHovered) {
+            el.isHovered = false;
+            el.isPressed = false;
+            if (el.mesh.material.color) el.mesh.material.color.offsetHSL(0, 0, -0.1); // Un-Highlight
+          }
+        }
+      });
+    }
+
+    // 3. Object Hover & Cursor Feedback
+    let cursorColor = 0x00ff88; // Default Green
+    const hit = checkDirectTouch(hand);
+
+    // Highlight Dots/Handles if touched
+    if (hit && hit.object) {
+      cursorColor = 0xffff00; // Yellow for intersection
+      if (hit.object.material && hit.object.material.emissive) {
+        // If it's a dot/handle with emissive material
+        if (!hit.object.userData.originalEmissive) {
+          hit.object.userData.originalEmissive = hit.object.material.emissive.getHex();
+        }
+        hit.object.material.emissive.setHex(0xffffff);
+
+        // Reset on next frame (simple approach, or track lastHover)
+        // Since we run this every frame, we need a way to un-highlight.
+        // Let's store it in a temporary list to clear next frame, or rely on the fact 
+        // that we probably need a dedicated "hoveredObject" state to clean up.
+        // For now, let's just Pulse the cursor and let the standard interaction handle logic 
+        // taking over for "Drag" state.
+      }
+    }
+
+    // Update Index Tip Cursor
+    const handModel = handModels[index];
+    if (handModel && handModel.spheres && handModel.spheres['index-finger-tip']) {
+      const sphere = handModel.spheres['index-finger-tip'];
+      if (sphere.material) {
+        sphere.material.color.setHex(cursorColor);
+        sphere.material.emissive.setHex(cursorColor);
+      }
+    }
+  });
+}
+
+function handleVRAction(action, mesh) {
+  // Visual feedback
+  if (mesh.material.color) {
+    const old = mesh.material.color.getHex();
+    mesh.material.color.setHex(0xffffff); // White flash
+    setTimeout(() => { mesh.material.color.setHex(old); }, 150);
+  }
+
+  // Audio Feedback (Meta Best Practice for Direct Touch)
+  if (Tone.context.state === 'running') {
+    const click = new Tone.MembraneSynth().toDestination();
+    click.triggerAttackRelease("C5", "32n", undefined, 0.1); // Short high pitch click
+  }
+
+  console.log('VR Action:', action);
+  if (action === 'toggle_main_ui') {
+    if (vrUIPanel && vrUIPanel.visible) {
+      vrUIPanel.visible = false;
+    } else if (vrUIPanel) {
+      vrUIPanel.visible = true;
+      // Recenter?
+    } else {
+      createVRUI();
+    }
+  } else {
+    // Delegate to existing handler logic
+    // Create a fake button object with userData for compatibility
+    const fakeBtn = { userData: { buttonAction: action }, material: mesh.material }; // mesh already passed for flash
+    handleVRUIClick(fakeBtn);
   }
 }
 
@@ -2544,10 +2854,20 @@ function handleVRUIClick(button) {
       hoverMarker.visible = false;
     }
     draggedDot = null;
-  } else if (action === 'reset') {
+  } else if (action === 'reset' || action === 'reset pos') {
     cubeGroup.rotation.x = 0;
     cubeGroup.rotation.y = Math.PI / 12;
     cubeGroup.rotation.z = 0;
+  } else if (action === 'play') {
+    ensureAudioStarted().then(() => setPlaying(true));
+    // Update button text? Complex in VR canvas re-draw, so maybe just toggle internal state
+    // Ideally we'd redraw the canvas... but for now let's just make it toggle action
+  } else if (action === 'pause') {
+    setPlaying(false);
+  } else if (action === 'exit vr') {
+    if (renderer.xr.getSession()) {
+      renderer.xr.getSession().end();
+    }
   }
 }
 
@@ -2555,10 +2875,9 @@ function animate() {
   renderer.setAnimationLoop(animate);
 
   // VR setup/teardown
-  if (renderer.xr.isPresenting && !vrUIPanel) {
-    createVRUI();
-  } else if (!renderer.xr.isPresenting && vrUIPanel) {
-    removeVRUI();
+  // VR setup/teardown
+  if (!renderer.xr.isPresenting) {
+    if (wristMenuGroup) removeVRUI(); // Cleanup if exited VR
   }
 
   // Update spectrograph texture in VR
@@ -2571,6 +2890,10 @@ function animate() {
     if (hoverMarker) {
       hoverMarker.visible = false;
     }
+
+    // Update Interactions (Poke, Menu)
+    updateVRInteractions();
+
     // --- UNIFIED POINTER AND VISUALIZATION LOGIC ---
     const activeControllers = [...controllers, ...hands];
     activeControllers.forEach((source, index) => {
@@ -2608,14 +2931,18 @@ function animate() {
       }
 
       // Update hover crosshairs (only if not dragging/rotating)
-      const vrHoverLines = isHand && hands.indexOf(source) === 0 ? vrHoverLinesLeft : vrHoverLinesRight;
+      // User request: No "ghost" crosshairs for cursor. Only marker crosshairs.
+      // We will remove the raycast hover visualization.
+
       const isLeft = isHand && hands.indexOf(source) === 0;
 
+      // Cleanup previous frame's hover lines just in case
       if (isLeft && vrHoverLinesLeft) { cubeGroup.remove(vrHoverLinesLeft); vrHoverLinesLeft = null; }
       if (!isLeft && vrHoverLinesRight) { cubeGroup.remove(vrHoverLinesRight); vrHoverLinesRight = null; }
 
       // Direct Touch Visual Feedback
       if (isHand) {
+
         const directHit = checkDirectTouch(source);
         if (directHit && !directHit.isHandle && directHit.object) {
           // Scale up dot slightly when touching
@@ -2627,13 +2954,10 @@ function animate() {
       }
 
       if (!vrDraggedInfo.isDragging && !vrDraggedInfo.isRotating) {
+        // Just checking intersection for potential interaction, but not drawing full crosshairs
         const point = getIntersectionPointFromRay(raycaster, getBlockingObjects());
-        if (point) {
-          const newHoverLines = createHoverLines(point);
-          cubeGroup.add(newHoverLines);
-          if (isLeft) vrHoverLinesLeft = newHoverLines;
-          else vrHoverLinesRight = newHoverLines;
-        }
+        // Logic for highlighting/cursor was handled above or could be added here if needed
+        // But removing the "Ghost Crosshair" per user request.
       }
     });
 
@@ -2743,8 +3067,12 @@ function animate() {
     hands.forEach((hand, index) => {
       if (hand && hand.joints) {
         const handModel = handModels[index];
+        // Only proceed if we have a valid hand model (XRHandModelFactory loaded)
+        if (!handModel) return;
+
         for (const [jointName, joint] of Object.entries(hand.joints)) {
           if (joint) {
+            if (!handModel.spheres) handModel.spheres = {}; // Ensure spheres object exists
             if (!handModel.spheres[jointName]) {
               const isTip = jointName.includes('tip');
               const radius = isTip ? 0.012 : 0.008;
