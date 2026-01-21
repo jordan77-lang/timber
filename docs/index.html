@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Timbre Box Experiment</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Tone.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.39/Tone.js"></script>
+  <!-- Three.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- GLTFLoader for loading .glb models -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- FBXLoader for Hand Models -->
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+  <!-- VRButton helper -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
+  <!-- Local Hand Tracking Polyfill (Vendored from Three.js r128 examples) -->
+  <script src="HandTracking.js"></script>
+</head>
+
+<body>
+  <h1>Timbre Box</h1>
+  <p id="info">Press Place Marker to spawn the cube at the center, then drag it to explore the timbre space. In VR, use
+    controllers or hand tracking.</p>
+  <div id="vr-button-container"></div>
+
+  <main class="main-container">
+    <div id="container" tabindex="0" aria-label="3D timbre cube visualizer">
+    </div>
+
+    <div class="spectro-section" aria-label="Spectrogram and controls">
+      <canvas id="spectrograph" width="600" height="500" role="img"
+        aria-label="Spectrogram visualization of current timbre">Your browser does not support canvas. A spectrogram
+        visualization of the current timbre would appear here.</canvas>
+      <div class="spectro-readouts" aria-live="polite">
+        <div>Centroid: <span id="readout-centroid">--</span></div>
+        <div>Noisiness: <span id="readout-noisiness">--</span></div>
+        <div>Inharmonicity: <span id="readout-inharm">--</span></div>
+      </div>
+      <div class="button-container">
+        <button id="play-pause">Pause</button>
+        <button id="place-marker">Place Marker</button>
+        <button id="clear">Clear</button>
+        <button id="download">Download</button>
+        <button id="reset-position">Reset Position</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
